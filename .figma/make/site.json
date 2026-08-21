@@ -1,0 +1,10 @@
+{
+  "description": "Streamline library management with a user-friendly interface for students and admins, enabling efficient book borrowing, tracking, and management.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

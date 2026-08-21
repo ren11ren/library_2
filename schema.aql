@@ -1,0 +1,70 @@
+-- Supabase / Postgres schema for Library Management System
+
+-- Extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Users (for role mapping; authentication should use Supabase Auth)
+CREATE TABLE IF NOT EXISTS profiles (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email text UNIQUE NOT NULL,
+  role text NOT NULL CHECK (role IN ('student','admin')),
+  full_name text,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Students (library-specific student records)
+CREATE TABLE IF NOT EXISTS students (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  student_no text UNIQUE NOT NULL,
+  name text NOT NULL,
+  course text,
+  card_no text UNIQUE,
+  email text UNIQUE,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz DEFAULT now()
+);
+
+-- Books
+CREATE TABLE IF NOT EXISTS books (
+  id text PRIMARY KEY,
+  title text NOT NULL,
+  author text,
+  category text,
+  copies int NOT NULL DEFAULT 1,
+  available int NOT NULL DEFAULT 1,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Borrowing records
+CREATE TABLE IF NOT EXISTS borrowing_records (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  txn text UNIQUE NOT NULL,
+  student_id uuid REFERENCES students(id) ON DELETE SET NULL,
+  card_no text,
+  book_id text REFERENCES books(id) ON DELETE SET NULL,
+  borrow_date date,
+  due_date date,
+  return_date date,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz DEFAULT now()
+);
+
+-- Overdue view
+CREATE OR REPLACE VIEW overdue_records AS
+SELECT
+  br.id as record_id,
+  s.name as student,
+  s.email,
+  b.title as book,
+  br.due_date,
+  (current_date - br.due_date) as days_overdue,
+  CASE WHEN br.return_date IS NULL AND br.due_date < current_date THEN TRUE ELSE FALSE END as is_overdue
+FROM borrowing_records br
+LEFT JOIN students s ON s.id = br.student_id
+LEFT JOIN books b ON b.id = br.book_id
+WHERE br.due_date IS NOT NULL;
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_students_student_no ON students(student_no);
+CREATE INDEX IF NOT EXISTS idx_books_category ON books(category);
+CREATE INDEX IF NOT EXISTS idx_borrowing_records_status ON borrowing_records(status);
