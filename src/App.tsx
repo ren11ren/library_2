@@ -1,5 +1,18 @@
 import { useState, useEffect, type ReactNode } from 'react'
-import { login, fetchStudentBorrowingRecords, loadDashboardData } from './lib/api'
+import {
+  login,
+  fetchStudentBorrowingRecords,
+  loadDashboardData,
+  borrowBook,
+  processReturn,
+  saveSettings,
+  fetchSettings,
+  upsertBook,
+  upsertStudent,
+  deleteBook,
+  deleteStudent,
+  markReminderSent,
+} from './lib/api'
 import { supabase } from './lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -79,6 +92,11 @@ const Icons = {
   FileText: () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+    </svg>
+  ),
+  Package: () => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+      <path d="M3 7.5 12 3l9 4.5-9 4.5L3 7.5Z" /><path d="M3 7.5V16.5L12 21l9-4.5V7.5" /><path d="M12 12v9" />
     </svg>
   ),
   RefreshCw: () => (
@@ -163,6 +181,30 @@ const Icons = {
 }
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
+const libraryClassificationCategories = [
+  'All',
+  'A - General Works (Encyclopedias, magazines, general periodicals)',
+  'B - Philosophy, Psychology, and Religion',
+  'C - Auxiliary Sciences of History',
+  'D - World History and History of Europe, Asia, and Africa',
+  'E - F - History of the Americas',
+  'G - Geography, Anthropology, and Recreation',
+  'H - Social Sciences (Economics, sociology, statistics)',
+  'J - Political Science',
+  'K - Law',
+  'L - Education',
+  'M - Music',
+  'N - Fine Arts (Architecture, painting, design)',
+  'P - Language and Literature',
+  'Q - Science (Mathematics, physics, chemistry, biology)',
+  'R - Medicine and Nursing',
+  'S - Agriculture',
+  'T - Technology and Engineering',
+  'U - Military Science',
+  'V - Naval Science',
+  'Z - Bibliography and Library Science',
+]
+
 const borrowedBooks = [
   { id: 1, title: 'Introduction to Algorithms', author: 'Cormen et al.', borrowDate: 'Jul 25, 2025', dueDate: 'Aug 8, 2025', status: 'overdue' },
   { id: 2, title: 'Clean Code', author: 'Robert C. Martin', borrowDate: 'Aug 1, 2025', dueDate: 'Aug 15, 2025', status: 'due-soon' },
@@ -170,21 +212,21 @@ const borrowedBooks = [
 ]
 
 const searchResults = [
-  { id: 'BK-001', title: 'Introduction to Algorithms', author: 'Cormen, Leiserson, Rivest', category: 'Computer Science', copies: 3, available: 2 },
-  { id: 'BK-002', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', category: 'Computer Science', copies: 2, available: 0 },
-  { id: 'BK-003', title: 'Clean Code', author: 'Robert C. Martin', category: 'Software Engineering', copies: 4, available: 3 },
-  { id: 'BK-004', title: 'Design Patterns', author: 'Gang of Four', category: 'Software Engineering', copies: 2, available: 1 },
-  { id: 'BK-005', title: 'Structure and Interpretation', author: 'Abelson & Sussman', category: 'Computer Science', copies: 1, available: 1 },
-  { id: 'BK-006', title: 'Database System Concepts', author: 'Silberschatz et al.', category: 'Database', copies: 5, available: 4 },
+  { id: 'BK-001', isbn: '9780262033848', title: 'Introduction to Algorithms', author: 'Cormen, Leiserson, Rivest', publisher: 'MIT Press', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 3, available: 2, rack: 'R2', updatedOn: '2022-06-12 11:13:27' },
+  { id: 'BK-002', isbn: '9780201896831', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', publisher: 'Addison Wesley', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 2, available: 0, rack: 'R3', updatedOn: '2022-06-12 11:06:01' },
+  { id: 'BK-003', isbn: '9780132350884', title: 'Clean Code', author: 'Robert C. Martin', publisher: 'Pearson', category: 'T - Technology and Engineering', copies: 4, available: 3, rack: 'R1', updatedOn: '2022-06-12 13:29:14' },
+  { id: 'BK-004', isbn: '9780201633610', title: 'Design Patterns', author: 'Gang of Four', publisher: 'Addison Wesley', category: 'T - Technology and Engineering', copies: 2, available: 1, rack: 'R2', updatedOn: '2022-06-12 12:05:10' },
+  { id: 'BK-005', isbn: '9780132126953', title: 'Structure and Interpretation', author: 'Abelson & Sussman', publisher: 'MIT Press', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 1, available: 1, rack: 'R4', updatedOn: '2022-06-12 09:48:30' },
+  { id: 'BK-006', isbn: '9780073523323', title: 'Database System Concepts', author: 'Silberschatz et al.', publisher: 'McGraw Hill', category: 'T - Technology and Engineering', copies: 5, available: 4, rack: 'R5', updatedOn: '2022-06-12 09:15:41' },
 ]
 
 const adminBooks = [
-  { id: 'BK-001', title: 'Introduction to Algorithms', author: 'Cormen et al.', category: 'Computer Science', copies: 3, available: 2 },
-  { id: 'BK-002', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', category: 'Computer Science', copies: 2, available: 0 },
-  { id: 'BK-003', title: 'Clean Code', author: 'Robert C. Martin', category: 'Software Engineering', copies: 4, available: 3 },
-  { id: 'BK-004', title: 'Design Patterns', author: 'Gang of Four', category: 'Software Engineering', copies: 2, available: 1 },
-  { id: 'BK-005', title: 'Computer Networks', author: 'Andrew Tanenbaum', category: 'Networking', copies: 3, available: 3 },
-  { id: 'BK-006', title: 'Database System Concepts', author: 'Silberschatz et al.', category: 'Database', copies: 5, available: 4 },
+  { id: 'BK-001', isbn: '9780262033848', title: 'Introduction to Algorithms', author: 'Cormen et al.', publisher: 'MIT Press', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 3, available: 2, rack: 'R2', updatedOn: '2022-06-12 11:13:27' },
+  { id: 'BK-002', isbn: '9780201896831', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', publisher: 'Addison Wesley', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 2, available: 0, rack: 'R3', updatedOn: '2022-06-12 11:06:01' },
+  { id: 'BK-003', isbn: '9780132350884', title: 'Clean Code', author: 'Robert C. Martin', publisher: 'Pearson', category: 'T - Technology and Engineering', copies: 4, available: 3, rack: 'R1', updatedOn: '2022-06-12 13:29:14' },
+  { id: 'BK-004', isbn: '9780201633610', title: 'Design Patterns', author: 'Gang of Four', publisher: 'Addison Wesley', category: 'T - Technology and Engineering', copies: 2, available: 1, rack: 'R2', updatedOn: '2022-06-12 12:05:10' },
+  { id: 'BK-005', isbn: '9780132126953', title: 'Computer Networks', author: 'Andrew Tanenbaum', publisher: 'Prentice Hall', category: 'T - Technology and Engineering', copies: 3, available: 3, rack: 'R6', updatedOn: '2022-06-12 08:42:56' },
+  { id: 'BK-006', isbn: '9780073523323', title: 'Database System Concepts', author: 'Silberschatz et al.', publisher: 'McGraw Hill', category: 'T - Technology and Engineering', copies: 5, available: 4, rack: 'R5', updatedOn: '2022-06-12 09:15:41' },
 ]
 
 const adminStudents = [
@@ -356,7 +398,7 @@ function Sidebar({
   title: string
 }) {
   return (
-    <aside className="w-60 shrink-0 bg-green-900 min-h-screen flex flex-col">
+    <aside className="w-64 shrink-0 bg-green-900 min-h-screen flex flex-col">
       <div className="px-5 py-6 border-b border-green-800">
         <div className="flex items-center gap-2.5 text-white">
           <Icons.Library />
@@ -372,8 +414,8 @@ function Sidebar({
             key={item.id}
             onClick={() => onSelect(item.id)}
             className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left w-full ${active === item.id
-                ? 'bg-green-600 text-white'
-                : 'text-green-200 hover:bg-green-800 hover:text-white'
+              ? 'bg-green-600 text-white'
+              : 'text-green-200 hover:bg-green-800 hover:text-white'
               }`}
           >
             {item.icon}
@@ -504,12 +546,12 @@ function StudentBorrowerCard() {
                 <div className="col-span-5 pl-2 font-medium text-gray-800 leading-snug">{entry.book}</div>
                 <div className="col-span-3 text-center text-gray-500">{entry.borrowDate}</div>
                 <div className={`col-span-3 text-center font-medium ${entry.status === 'overdue'
-                    ? 'text-red-600'
-                    : entry.status === 'due-soon'
-                      ? 'text-orange-500'
-                      : entry.status === 'active'
-                        ? 'text-green-600'
-                        : 'text-gray-500'
+                  ? 'text-red-600'
+                  : entry.status === 'due-soon'
+                    ? 'text-orange-500'
+                    : entry.status === 'active'
+                      ? 'text-green-600'
+                      : 'text-gray-500'
                   }`}>
                   {entry.status === 'active' || entry.status === 'due-soon' || entry.status === 'overdue'
                     ? entry.returnDate
@@ -590,19 +632,35 @@ function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void
   )
 }
 
-function SearchBooks() {
+function SearchBooks({ studentId }: { studentId?: string }) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [borrowModal, setBorrowModal] = useState<typeof searchResults[0] | null>(null)
   const [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const categories = ['All', 'Computer Science', 'Software Engineering', 'Database', 'Networking']
+  const categories = libraryClassificationCategories
   const filtered = searchResults.filter((b) => {
     const q = query.toLowerCase()
     const matchQ = !q || b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
     const matchC = category === 'All' || b.category === category
     return matchQ && matchC
   })
+
+  const handleConfirmBorrow = async () => {
+    if (!studentId || !borrowModal) return
+    try {
+      setBusy(true)
+      setError(null)
+      await borrowBook(studentId, borrowModal.id)
+      setConfirmed(true)
+    } catch (e: any) {
+      setError(e?.message || 'Unable to borrow this book right now.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   if (borrowModal) {
     return (
@@ -616,13 +674,14 @@ function SearchBooks() {
               </div>
               <h3 className="font-bold text-green-900 text-lg">Borrow Confirmed!</h3>
               <p className="text-sm text-gray-500">You have successfully borrowed <span className="font-medium text-gray-700">{borrowModal.title}</span>. Return by <span className="font-medium text-gray-700">Aug 26, 2025</span>.</p>
-              <button onClick={() => { setBorrowModal(null); setConfirmed(false) }} className="mt-2 px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+              <button onClick={() => { setBorrowModal(null); setConfirmed(false); setError(null) }} className="mt-2 px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
                 Back to Search
               </button>
             </div>
           ) : (
             <>
               <h3 className="font-semibold text-green-900 mb-4">Confirm Borrowing</h3>
+              {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
               <div className="flex flex-col gap-3 text-sm mb-6">
                 {[
                   ['Student Name', 'Maria Santos'],
@@ -640,13 +699,14 @@ function SearchBooks() {
               </div>
               <div className="flex gap-3">
                 <button
-                  onClick={() => setConfirmed(true)}
-                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium text-sm rounded-lg transition-colors"
+                  onClick={handleConfirmBorrow}
+                  disabled={busy}
+                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-medium text-sm rounded-lg transition-colors"
                 >
-                  Confirm Borrow
+                  {busy ? 'Processing...' : 'Confirm Borrow'}
                 </button>
                 <button
-                  onClick={() => setBorrowModal(null)}
+                  onClick={() => { setBorrowModal(null); setError(null) }}
                   className="flex-1 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium text-sm rounded-lg transition-colors"
                 >
                   Cancel
@@ -684,37 +744,57 @@ function SearchBooks() {
           </select>
         </div>
       </div>
-      <Table headers={['Book ID', 'Title', 'Author', 'Category', 'Availability', 'Action']}>
-        {filtered.map((b) => (
-          <Tr key={b.id}>
-            <Td className="text-gray-400 font-mono text-xs">{b.id}</Td>
-            <Td className="font-medium text-gray-900">{b.title}</Td>
-            <Td>{b.author}</Td>
-            <Td>
-              <span className="px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded-md font-medium">{b.category}</span>
-            </Td>
-            <Td>
-              {b.available > 0
-                ? <span className="text-green-600 font-medium">{b.available} / {b.copies} available</span>
-                : <span className="text-red-500 font-medium">Not available</span>}
-            </Td>
-            <Td>
-              {b.available > 0 ? (
-                <button
-                  onClick={() => setBorrowModal(b)}
-                  className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Borrow
-                </button>
-              ) : (
-                <button className="px-3 py-1.5 border border-gray-200 text-gray-400 text-xs font-medium rounded-lg cursor-not-allowed" disabled>
-                  Unavailable
-                </button>
-              )}
-            </Td>
-          </Tr>
-        ))}
-      </Table>
+
+      <div className="overflow-x-auto rounded-xl border border-green-100 bg-white">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-green-50 text-left">
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Book</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">ISBN</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Author</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Category</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Availability</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-green-50">
+            {filtered.map((b) => (
+              <tr key={b.id} className="bg-white hover:bg-green-50/50 transition-colors">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-10 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-sky-50 to-blue-100 text-[9px] font-bold text-blue-700 shadow-sm">
+                      {b.title.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
+                    </div>
+                    <div className="font-medium text-gray-900">{b.title}</div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-500">{b.isbn}</td>
+                <td className="px-4 py-3 text-gray-700">{b.author}</td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">{b.category}</span>
+                </td>
+                <td className="px-4 py-3">
+                  {b.available > 0 ? <span className="font-medium text-green-600">{b.available} / {b.copies} available</span> : <span className="font-medium text-red-500">Not available</span>}
+                </td>
+                <td className="px-4 py-3">
+                  {b.available > 0 ? (
+                    <button
+                      onClick={() => setBorrowModal(b)}
+                      className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-green-700"
+                    >
+                      Borrow
+                    </button>
+                  ) : (
+                    <button className="cursor-not-allowed rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-400" disabled>
+                      Unavailable
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -831,7 +911,7 @@ function BorrowerCardSlip({
 
         {/* Actions */}
         <div className="px-6 pb-5 flex gap-3">
-          <button className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
+          <button onClick={() => window.print()} className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors">
             Print Card
           </button>
           <button onClick={onClose} className="flex-1 py-2.5 border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium rounded-lg transition-colors">
@@ -903,12 +983,37 @@ function BorrowingHistory() {
 }
 
 function LibraryCard() {
+  const student = {
+    name: 'Maria Santos',
+    id: 'STU-2021-001',
+    course: 'BS Computer Science',
+    cardNo: 'LC-0042',
+  }
+
+  function handleDownloadCard() {
+    const content = [
+      'Greenfield College Library',
+      'Student Name: Maria Santos',
+      'Student ID: STU-2021-001',
+      'Course: BS Computer Science',
+      'Card No.: LC-0042',
+      'Valid AY 2025–2026',
+    ].join('\n')
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'library-card.txt'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div>
       <PageHeader title="Library Card" subtitle="Your digital library identification card." />
       <div className="max-w-sm">
         <div className="bg-white rounded-2xl border-2 border-green-200 overflow-hidden shadow-sm">
-          {/* Card header */}
           <div className="bg-green-700 px-6 py-4">
             <div className="flex items-center gap-2 text-white">
               <Icons.Library />
@@ -920,35 +1025,32 @@ function LibraryCard() {
           </div>
 
           <div className="p-6 flex gap-5">
-            {/* Photo placeholder */}
             <div className="flex-shrink-0">
               <div className="w-20 h-24 bg-green-100 rounded-lg flex flex-col items-center justify-center text-green-400 border border-green-200">
                 <Icons.User />
                 <span className="text-xs mt-1 text-green-300">Photo</span>
               </div>
             </div>
-            {/* Student info */}
             <div className="flex-1 flex flex-col gap-1.5 text-sm">
               <div>
                 <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Student Name</div>
-                <div className="font-bold text-green-900">Maria Santos</div>
+                <div className="font-bold text-green-900">{student.name}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Student ID</div>
-                <div className="font-mono font-semibold text-gray-700">STU-2021-001</div>
+                <div className="font-mono font-semibold text-gray-700">{student.id}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Course</div>
-                <div className="text-gray-700">BS Computer Science</div>
+                <div className="text-gray-700">{student.course}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Card No.</div>
-                <div className="font-mono font-bold text-green-700">LC-0042</div>
+                <div className="font-mono font-bold text-green-700">{student.cardNo}</div>
               </div>
             </div>
           </div>
 
-          {/* QR / barcode area */}
           <div className="border-t border-green-100 px-6 py-4 flex items-center justify-between bg-green-50">
             <div className="text-green-600">
               <Icons.QrCode />
@@ -959,11 +1061,10 @@ function LibraryCard() {
                   <div key={i} style={{ width: i % 3 === 0 ? 3 : 1.5, height: 32, background: '#15803d', opacity: (i % 5 === 0 ? 0.4 : 1) }} />
                 ))}
               </div>
-              <span className="font-mono text-xs text-green-700 tracking-widest">LC-0042</span>
+              <span className="font-mono text-xs text-green-700 tracking-widest">{student.cardNo}</span>
             </div>
           </div>
 
-          {/* Status */}
           <div className="px-6 py-3 flex items-center justify-between border-t border-green-100">
             <span className="text-xs text-gray-500">Valid AY 2025–2026</span>
             <StatusBadge status="active" />
@@ -971,10 +1072,10 @@ function LibraryCard() {
         </div>
 
         <div className="mt-4 flex gap-3">
-          <button className="flex-1 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+          <button onClick={handleDownloadCard} className="flex-1 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
             Download Card
           </button>
-          <button className="flex-1 py-2.5 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
+          <button onClick={() => window.print()} className="flex-1 py-2.5 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
             Print
           </button>
         </div>
@@ -984,6 +1085,19 @@ function LibraryCard() {
 }
 
 function Profile() {
+  const [profile, setProfile] = useState({
+    name: 'Maria Santos',
+    studentId: 'STU-2021-001',
+    email: 'maria.santos@college.edu',
+    course: 'BS Computer Science — 4th Year',
+    card: 'LC-0042',
+  })
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  function handleSaveProfile() {
+    setSaveMessage('Profile updated successfully.')
+  }
+
   return (
     <div>
       <PageHeader title="My Profile" subtitle="Manage your account information." />
@@ -995,30 +1109,35 @@ function Profile() {
             </svg>
           </div>
           <div>
-            <div className="font-bold text-green-900 text-lg">Maria Santos</div>
-            <div className="text-sm text-gray-500">STU-2021-001 · BS Computer Science</div>
+            <div className="font-bold text-green-900 text-lg">{profile.name}</div>
+            <div className="text-sm text-gray-500">{profile.studentId} · {profile.course.split(' — ')[0]}</div>
           </div>
         </div>
         <div className="grid gap-4">
           {[
-            { label: 'Full Name', value: 'Maria Santos' },
-            { label: 'Student ID', value: 'STU-2021-001' },
-            { label: 'Email', value: 'maria.santos@college.edu' },
-            { label: 'Course / Year', value: 'BS Computer Science — 4th Year' },
-            { label: 'Library Card', value: 'LC-0042' },
-          ].map(({ label, value }) => (
+            { label: 'Full Name', key: 'name' },
+            { label: 'Student ID', key: 'studentId' },
+            { label: 'Email', key: 'email' },
+            { label: 'Course / Year', key: 'course' },
+            { label: 'Library Card', key: 'card' },
+          ].map(({ label, key }) => (
             <div key={label}>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
               <input
                 type="text"
-                defaultValue={value}
+                value={(profile as any)[key]}
+                onChange={(e) => {
+                  setProfile({ ...profile, [key]: e.target.value })
+                  setSaveMessage(null)
+                }}
                 className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
               />
             </div>
           ))}
-          <button className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+          <button onClick={handleSaveProfile} className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
             Save Changes
           </button>
+          {saveMessage && <div className="text-sm text-green-700">{saveMessage}</div>}
         </div>
       </div>
     </div>
@@ -1027,59 +1146,305 @@ function Profile() {
 
 // ─── Admin Views ───────────────────────────────────────────────────────────────
 
-function AdminDashboard() {
-  return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-green-900">Admin Dashboard</h2>
-        <p className="text-sm text-gray-500 mt-0.5">Library overview and statistics — August 2025.</p>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Books" value={1248} color="text-green-700" />
-        <StatCard label="Available Books" value={974} color="text-green-600" />
-        <StatCard label="Borrowed Books" value={237} color="text-blue-600" />
-        <StatCard label="Overdue Books" value={37} color="text-red-600" />
-      </div>
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div>
-          <h3 className="text-base font-semibold text-green-900 mb-3">Recent Borrowing Records</h3>
-          <Table headers={['Student', 'Book', 'Due Date', 'Status']}>
-            {borrowingRecords.slice(0, 4).map((r) => (
-              <Tr key={r.txn}>
-                <Td className="font-medium">{r.student}</Td>
-                <Td className="text-gray-500 text-xs">{r.book}</Td>
-                <Td>{r.due}</Td>
-                <Td><StatusBadge status={r.status} /></Td>
-              </Tr>
-            ))}
-          </Table>
-        </div>
-        <div>
-          <h3 className="text-base font-semibold text-green-900 mb-3">Overdue Alert</h3>
-          <Table headers={['Student', 'Book', 'Days Overdue']}>
-            {overdueRecords.map((r, i) => (
-              <Tr key={i}>
-                <Td className="font-medium">{r.student}</Td>
-                <Td className="text-gray-500 text-xs">{r.book}</Td>
-                <Td className="text-red-600 font-semibold">{r.daysOverdue}d</Td>
-              </Tr>
-            ))}
-          </Table>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function AdminBooks() {
+  const [books, setBooks] = useState(adminBooks)
   const [query, setQuery] = useState('')
-  const filtered = adminBooks.filter((b) =>
-    !query || b.title.toLowerCase().includes(query.toLowerCase()) || b.author.toLowerCase().includes(query.toLowerCase())
-  )
+  const [categoryFilter, setCategoryFilter] = useState('All')
+  const [showForm, setShowForm] = useState(false)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
+  const [coverFileName, setCoverFileName] = useState('No file chosen')
+  const [form, setForm] = useState({
+    book_code: '',
+    title: '',
+    author: '',
+    isbn: '',
+    published_year: '2024',
+    category: 'Q - Science (Mathematics, physics, chemistry, biology)',
+    publisher: '',
+    price: '0.00',
+    copies: '1',
+    damaged: '0',
+    lost: '0',
+  })
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<typeof adminBooks[number] | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  const filtered = books.filter((b) => {
+    const matchQuery = !query || b.title.toLowerCase().includes(query.toLowerCase()) || b.author.toLowerCase().includes(query.toLowerCase())
+    const matchCategory = categoryFilter === 'All' || b.category === categoryFilter
+    return matchQuery && matchCategory
+  })
+
+  function handleCoverUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      setCoverPreview(null)
+      setCoverFileName('No file chosen')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCoverPreview(String(reader.result))
+    }
+    reader.readAsDataURL(file)
+    setCoverFileName(file.name)
+  }
+
+  function resetForm() {
+    setForm({
+      book_code: '',
+      title: '',
+      author: '',
+      isbn: '',
+      published_year: '2024',
+      category: 'Q - Science (Mathematics, physics, chemistry, biology)',
+      publisher: '',
+      price: '0.00',
+      copies: '1',
+      damaged: '0',
+      lost: '0',
+    })
+    setCoverPreview(null)
+    setCoverFileName('No file chosen')
+    setEditingId(null)
+    setShowForm(false)
+  }
+
+  function openCreateForm() {
+    resetForm()
+    setShowForm(true)
+    setMessage(null)
+  }
+
+  function startEditBook(book: typeof adminBooks[number]) {
+    setEditingId(book.id)
+    setForm({
+      book_code: book.id,
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn || '',
+      published_year: '2024',
+      category: book.category,
+      publisher: book.publisher || '',
+      price: '0.00',
+      copies: String(book.copies),
+      damaged: '0',
+      lost: '0',
+    })
+    setShowForm(true)
+    setMessage(null)
+  }
+
+  async function handleSaveBook() {
+    const title = form.title.trim()
+    const author = form.author.trim()
+    if (!title || !author) {
+      setMessage('Title and author are required.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setMessage(null)
+
+      const payload = {
+        book_code: form.book_code.trim() || `BK-${Date.now()}`,
+        title,
+        author,
+        isbn: form.isbn.trim() || '978-XXXX',
+        publisher: form.publisher.trim() || 'Unknown Publisher',
+        category: form.category,
+        copies: Number(form.copies) || 1,
+        available: Number(form.copies) || 1,
+        published_year: Number(form.published_year) || new Date().getFullYear(),
+        price: Number(form.price) || 0,
+        damaged: Number(form.damaged) || 0,
+        lost: Number(form.lost) || 0,
+      }
+
+      const saved = await upsertBook({
+        ...payload,
+        id: editingId ?? undefined,
+      } as any)
+
+      const now = new Date().toISOString().slice(0, 16).replace('T', ' ')
+
+      setBooks((current) => {
+        const next = current.filter((book) => book.id !== (saved.id ?? editingId ?? book.id))
+        const item = {
+          id: saved.id ?? payload.book_code,
+          isbn: saved.isbn ?? payload.isbn,
+          title: saved.title ?? title,
+          author: saved.author ?? author,
+          publisher: saved.publisher ?? payload.publisher,
+          category: saved.category ?? payload.category,
+          copies: saved.copies ?? payload.copies,
+          available: saved.available ?? payload.available,
+          rack: 'R1',
+          updatedOn: now,
+        }
+        return [item, ...next]
+      })
+
+      const savedMessage = editingId ? 'Book updated and synced.' : 'Book saved and synced to the database.'
+      setMessage(savedMessage)
+      resetForm()
+    } catch (err: any) {
+      setMessage(err?.message || 'Unable to save the book.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteBook(bookId: string) {
+    try {
+      await deleteBook(bookId)
+      setBooks((current) => current.filter((book) => book.id !== bookId))
+      setMessage('Book deleted successfully.')
+    } catch (err: any) {
+      setMessage(err?.message || 'Unable to delete the book.')
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Book Management" subtitle="Manage the library's book inventory." />
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+      {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-[1200px] max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-[#f3f3f3] shadow-[0_25px_60px_rgba(15,23,42,0.18)]">
+            <div className="flex items-center justify-between border-b border-gray-200 bg-[#f7f7f7] px-5 py-3">
+              <div className="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                <span className="inline-flex h-5 w-5 items-center justify-center text-gray-700">
+                  <Icons.Plus />
+                </span>
+                <span>{editingId ? 'Edit Book' : 'Add New Book'}</span>
+              </div>
+              <button onClick={resetForm} className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-50 hover:text-gray-700">
+                <Icons.X />
+              </button>
+            </div>
+
+            <div className="grid gap-4 p-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+              <div className="rounded-xl border border-gray-200 bg-[#f7f7f7] p-3">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <span className="inline-flex h-5 w-5 items-center justify-center text-orange-500">
+                    <Icons.Book />
+                  </span>
+                  Book Cover
+                </div>
+
+                <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-[#d6d6d6] bg-gradient-to-br from-orange-100 via-white to-sky-100">
+                  {coverPreview ? (
+                    <img src={coverPreview} alt="Book cover preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-28 w-20 items-center justify-center rounded-md bg-gradient-to-br from-orange-500 to-orange-300 text-center text-[10px] font-bold uppercase tracking-wider text-white shadow-md">
+                      Book Cover
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  <label className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50">
+                    <span>Upload Book Cover</span>
+                    <input type="file" accept="image/*" onChange={handleCoverUpload} className="hidden" />
+                  </label>
+                  <div className="mt-3 text-xs text-gray-500">Choose File</div>
+                  <div className="mt-1 text-xs text-gray-400">{coverFileName}</div>
+                  <div className="mt-3 text-[11px] text-gray-400">Recommended: 300×400px, max 9MB</div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-[#f7f7f7] p-3">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
+                    <span className="inline-flex h-5 w-5 items-center justify-center text-green-600">
+                      <Icons.Book />
+                    </span>
+                    Book Information
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Title <span className="text-red-500">*</span></label>
+                      <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Enter book title" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Author <span className="text-red-500">*</span></label>
+                      <input value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} placeholder="Enter author name" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">ISBN</label>
+                      <input value={form.isbn} onChange={(e) => setForm({ ...form, isbn: e.target.value })} placeholder="978-XXXX" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Published Year</label>
+                      <input value={form.published_year} onChange={(e) => setForm({ ...form, published_year: e.target.value })} placeholder="2024" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Category <span className="text-red-500">*</span></label>
+                      <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100">
+                        {libraryClassificationCategories.filter((category) => category !== 'All').map((category) => (
+                          <option key={category}>{category}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Publisher</label>
+                      <input value={form.publisher} onChange={(e) => setForm({ ...form, publisher: e.target.value })} placeholder="Publisher name" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Price ($)</label>
+                      <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="0.00" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-[#f7f7f7] p-3">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
+                    <span className="inline-flex h-5 w-5 items-center justify-center text-blue-600">
+                      <Icons.Package />
+                    </span>
+                    Inventory
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Total Copies <span className="text-red-500">*</span></label>
+                      <input type="number" min="1" value={form.copies} onChange={(e) => setForm({ ...form, copies: e.target.value })} placeholder="1" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Damaged</label>
+                      <input type="number" min="0" value={form.damaged} onChange={(e) => setForm({ ...form, damaged: e.target.value })} placeholder="0" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Lost</label>
+                      <input type="number" min="0" value={form.lost} onChange={(e) => setForm({ ...form, lost: e.target.value })} placeholder="0" className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-gray-200 bg-[#f7f7f7] px-4 py-3">
+              <button onClick={resetForm} className="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveBook} disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Book' : 'Save Book'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-col gap-3 mb-5 lg:flex-row">
         <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></span>
           <input
@@ -1090,53 +1455,287 @@ function AdminBooks() {
             className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+        <div className="flex items-center gap-2">
+          <Icons.Filter />
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="min-w-[220px] py-2.5 px-3 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 transition"
+          >
+            {libraryClassificationCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </div>
+        <button onClick={openCreateForm} className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
           <Icons.Plus />
           Add Book
         </button>
       </div>
-      <Table headers={['Book ID', 'Title', 'Author', 'Category', 'Copies', 'Status', 'Actions']}>
-        {filtered.map((b) => (
-          <Tr key={b.id}>
-            <Td className="font-mono text-xs text-gray-400">{b.id}</Td>
-            <Td className="font-medium text-gray-900">{b.title}</Td>
-            <Td>{b.author}</Td>
-            <Td><span className="px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded-md font-medium">{b.category}</span></Td>
-            <Td>{b.available} / {b.copies}</Td>
-            <Td><StatusBadge status={b.available > 0 ? 'active' : 'unavailable'} /></Td>
-            <Td>
-              <div className="flex items-center gap-1.5">
-                <button className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"><Icons.Edit /></button>
-                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icons.Trash /></button>
-              </div>
-            </Td>
-          </Tr>
-        ))}
-      </Table>
+      <div className="overflow-x-auto rounded-xl border border-green-100 bg-white">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-green-50 text-left">
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Book</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">ISBN</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Author</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Publisher</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Category</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Rack</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">No. of copy</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Status</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Updated On</th>
+              <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-green-800">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-green-50">
+            {filtered.map((b) => (
+              <tr key={b.id} className="bg-white hover:bg-green-50/50 transition-colors">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-14 w-12 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-white to-blue-50 text-[10px] font-bold text-blue-700 shadow-sm">
+                      {b.title.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900">{b.title}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-500">{b.isbn}</td>
+                <td className="px-4 py-3 text-gray-700">{b.author}</td>
+                <td className="px-4 py-3 text-gray-700">{b.publisher}</td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">{b.category}</span>
+                </td>
+                <td className="px-4 py-3 text-gray-700">{b.rack}</td>
+                <td className="px-4 py-3 text-gray-700">{b.copies}</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${b.available > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                    {b.available > 0 ? 'Enable' : 'Disable'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-500">{b.updatedOn}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => startEditBook(b)} className="rounded-lg bg-orange-400 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-500">Edit</button>
+                    <button onClick={() => setDeleteTarget(b)} className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-5 flex items-center justify-between text-sm text-gray-600">
+        <span>Showing 1 to {Math.min(filtered.length, 3)} of {filtered.length} entries</span>
+        <div className="flex items-center gap-2">
+          <button className="rounded border border-gray-200 bg-white px-3 py-1.5 text-gray-500 hover:bg-gray-50">Previous</button>
+          <button className="rounded bg-blue-600 px-3 py-1.5 text-white">1</button>
+          <button className="rounded border border-gray-200 bg-white px-3 py-1.5 text-gray-500 hover:bg-gray-50">Next</button>
+        </div>
+      </div>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-red-100">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-red-700">Confirm Delete</h3>
+              <button onClick={() => setDeleteTarget(null)} className="text-gray-400 hover:text-gray-700"><Icons.X /></button>
+            </div>
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete <span className="font-semibold text-gray-800">{deleteTarget.title}</span>?
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button onClick={() => handleDeleteBook(deleteTarget.id)} className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 transition-colors">Delete</button>
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function AdminStudents() {
+  const [students, setStudents] = useState(adminStudents)
+  const [query, setQuery] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<typeof adminStudents[number] | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<typeof adminStudents[number] | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    student_code: '',
+    name: '',
+    course: 'BSCS',
+    card: '',
+    email: '',
+    status: 'active' as 'active' | 'suspended',
+  })
+
+  const filtered = students.filter((s) => {
+    const q = query.toLowerCase()
+    return !q || s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q) || s.id.toLowerCase().includes(q) || s.card.toLowerCase().includes(q)
+  })
+
+  function openCreateForm() {
+    setEditingId(null)
+    setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' })
+    setShowForm(true)
+    setMessage(null)
+  }
+
+  function openEditForm(student: typeof adminStudents[number]) {
+    setEditingId(student.id)
+    setForm({
+      student_code: student.id,
+      name: student.name,
+      course: student.course,
+      card: student.card,
+      email: student.email,
+      status: student.status,
+    })
+    setShowForm(true)
+    setMessage(null)
+  }
+
+  async function handleSaveStudent() {
+    const trimmed = {
+      student_code: form.student_code.trim(),
+      name: form.name.trim(),
+      course: form.course.trim(),
+      card: form.card.trim(),
+      email: form.email.trim(),
+      status: form.status,
+    }
+
+    if (!trimmed.student_code || !trimmed.name || !trimmed.email) {
+      setMessage('Student ID, name, and email are required.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setMessage(null)
+      const saved = await upsertStudent({
+        id: editingId ?? undefined,
+        student_code: trimmed.student_code,
+        name: trimmed.name,
+        email: trimmed.email,
+        course: trimmed.course,
+        status: trimmed.status,
+      } as any)
+
+      setStudents((current) => {
+        const next = current.filter((s) => s.id !== (saved.id ?? editingId ?? s.id))
+        const item = {
+          id: saved.id ?? trimmed.student_code,
+          name: saved.name,
+          course: saved.course,
+          card: trimmed.card || 'LC-NEW',
+          email: saved.email,
+          status: saved.status ?? trimmed.status,
+        }
+        return [item, ...next]
+      })
+
+      setShowForm(false)
+      setEditingId(null)
+      setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' })
+      setMessage('Student saved successfully.')
+    } catch (err: any) {
+      setMessage(err?.message || 'Unable to save the student.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDeleteStudent(studentId: string) {
+    try {
+      await deleteStudent(studentId)
+      setStudents((current) => current.filter((s) => s.id !== studentId))
+      setMessage('Student deleted.')
+    } catch (err: any) {
+      setMessage(err?.message || 'Unable to delete the student.')
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Student Management" subtitle="View and manage registered library students." />
+      {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-4xl rounded-2xl border border-green-200 bg-white p-6 shadow-2xl shadow-green-900/10">
+            <div className="mb-6 flex items-center justify-between border-b border-green-100 pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-green-600">Student record</p>
+                <h3 className="text-2xl font-bold text-green-900">{editingId ? 'Edit Student' : 'Add Student'}</h3>
+              </div>
+              <button onClick={() => setShowForm(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700">
+                <Icons.X />
+              </button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Student ID</label>
+                <input value={form.student_code} onChange={(e) => setForm({ ...form, student_code: e.target.value })} placeholder="STU-2024-010" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Full name</label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jane Doe" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Email</label>
+                <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="jane.doe@college.edu" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Card No.</label>
+                <input value={form.card} onChange={(e) => setForm({ ...form, card: e.target.value })} placeholder="LC-0105" className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Course</label>
+                <select value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
+                  {['BSCS', 'BSIT', 'BSECE', 'BSME', 'BSIS'].map((course) => <option key={course}>{course}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</label>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'active' | 'suspended' })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-green-100 pt-5">
+              <button onClick={() => setShowForm(false)} className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSaveStudent} disabled={saving} className="flex items-center gap-2 rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Saving...' : editingId ? 'Update Student' : 'Save Student'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row gap-3 mb-5">
         <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></span>
           <input
             type="text"
             placeholder="Search students..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
           />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+        <button onClick={openCreateForm} className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
           <Icons.Plus />
           Add Student
         </button>
       </div>
       <Table headers={['Student ID', 'Name', 'Course', 'Card No.', 'Email', 'Status', 'Actions']}>
-        {adminStudents.map((s) => (
+        {filtered.map((s) => (
           <Tr key={s.id}>
             <Td className="font-mono text-xs text-gray-400">{s.id}</Td>
             <Td className="font-medium text-gray-900">{s.name}</Td>
@@ -1146,14 +1745,56 @@ function AdminStudents() {
             <Td><StatusBadge status={s.status} /></Td>
             <Td>
               <div className="flex items-center gap-1.5">
-                <button className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"><Icons.Eye /></button>
-                <button className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"><Icons.Edit /></button>
-                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icons.Trash /></button>
+                <button onClick={() => setSelected(s)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"><Icons.Eye /></button>
+                <button onClick={() => openEditForm(s)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"><Icons.Edit /></button>
+                <button onClick={() => setDeleteTarget(s)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Icons.Trash /></button>
               </div>
             </Td>
           </Tr>
         ))}
       </Table>
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-2xl border border-red-100 bg-white p-6 shadow-2xl shadow-red-900/10">
+            <div className="mb-5 flex items-center justify-between border-b border-red-100 pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-500">Confirmation</p>
+                <h3 className="text-2xl font-bold text-red-700">Delete Student</h3>
+              </div>
+              <button onClick={() => setDeleteTarget(null)} className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"><Icons.X /></button>
+            </div>
+            <p className="text-sm leading-6 text-gray-600">
+              Are you sure you want to delete <span className="font-semibold text-gray-800">{deleteTarget.name}</span>? This action cannot be undone.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-red-100 pt-5">
+              <button onClick={() => setDeleteTarget(null)} className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50">Cancel</button>
+              <button onClick={() => handleDeleteStudent(deleteTarget.id)} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-2xl border border-green-200 bg-white p-6 shadow-2xl shadow-green-900/10">
+            <div className="mb-5 flex items-center justify-between border-b border-green-100 pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-green-600">Profile</p>
+                <h3 className="text-2xl font-bold text-green-900">Student Details</h3>
+              </div>
+              <button onClick={() => setSelected(null)} className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"><Icons.X /></button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between rounded-xl bg-green-50 px-3 py-2"><span className="text-gray-500">Student ID</span><span className="font-mono font-semibold text-gray-800">{selected.id}</span></div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Name</span><span className="font-medium text-gray-800">{selected.name}</span></div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Course</span><span className="text-gray-800">{selected.course}</span></div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Card No.</span><span className="font-mono text-green-700 font-semibold">{selected.card}</span></div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Email</span><span className="text-gray-800">{selected.email}</span></div>
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Status</span><span><StatusBadge status={selected.status} /></span></div>
+            </div>
+            <button onClick={() => setSelected(null)} className="mt-6 w-full rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700">Close</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1190,6 +1831,31 @@ function AdminBorrowingRecords() {
 }
 
 function AdminReturns() {
+  const [cardNo, setCardNo] = useState('')
+  const [bookQuery, setBookQuery] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function handleProcessReturn() {
+    if (!cardNo.trim() || !bookQuery.trim()) {
+      setMessage('Card number and book details are required.')
+      return
+    }
+
+    try {
+      setBusy(true)
+      setMessage(null)
+      await processReturn(cardNo, bookQuery)
+      setMessage('Return recorded and inventory updated.')
+      setCardNo('')
+      setBookQuery('')
+    } catch (err: any) {
+      setMessage(err?.message || 'Unable to process this return.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Returns" subtitle="Process book returns and record them." />
@@ -1198,15 +1864,16 @@ function AdminReturns() {
         <div className="flex flex-col gap-4">
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Library Card No. / Student ID</label>
-            <input type="text" placeholder="e.g. LC-0042" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            <input value={cardNo} onChange={(e) => setCardNo(e.target.value)} type="text" placeholder="e.g. LC-0042" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Book ID or Title</label>
-            <input type="text" placeholder="e.g. BK-001 or Introduction to Algorithms" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            <input value={bookQuery} onChange={(e) => setBookQuery(e.target.value)} type="text" placeholder="e.g. BK-001 or Introduction to Algorithms" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
           </div>
-          <button className="py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
-            Process Return
+          <button onClick={handleProcessReturn} disabled={busy} className="py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
+            {busy ? 'Processing...' : 'Process Return'}
           </button>
+          {message && <div className="text-sm text-green-700">{message}</div>}
         </div>
       </div>
       <Table headers={['Student', 'Card No.', 'Book', 'Due Date', 'Return Date', 'Condition']}>
@@ -1229,9 +1896,25 @@ function AdminReturns() {
 }
 
 function AdminOverdueBooks() {
+  const [remindingId, setRemindingId] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function handleSendReminder(recordId: string) {
+    try {
+      setRemindingId(recordId)
+      await markReminderSent(recordId)
+      setMessage('Reminder sent and recorded.')
+    } catch (err: any) {
+      setMessage(err?.message || 'Unable to send the reminder.')
+    } finally {
+      setRemindingId(null)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Overdue Books" subtitle="Students with overdue borrowed books." />
+      {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
       <Table headers={['Student', 'Email', 'Book', 'Due Date', 'Days Overdue', 'Notified', 'Action']}>
         {overdueRecords.map((r, i) => (
           <Tr key={i}>
@@ -1249,9 +1932,9 @@ function AdminOverdueBooks() {
                 : <span className="text-gray-400 text-xs">Pending</span>}
             </Td>
             <Td>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors">
+              <button onClick={() => handleSendReminder(String(i))} disabled={remindingId === String(i)} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
                 <Icons.Mail />
-                Send Reminder
+                {remindingId === String(i) ? 'Sending...' : 'Send Reminder'}
               </button>
             </Td>
           </Tr>
@@ -1321,42 +2004,208 @@ function AdminBorrowerCards() {
 }
 
 function AdminLibraryCards() {
+  type LibraryCardRow = {
+    cardNo: string
+    name: string
+    studentId: string
+    course: string
+    issueDate: string
+    expiry: string
+    status: 'active' | 'suspended'
+  }
+
+  const [cards, setCards] = useState<LibraryCardRow[]>(() =>
+    adminStudents.map((s) => ({
+      cardNo: s.card,
+      name: s.name,
+      studentId: s.id,
+      course: s.course,
+      issueDate: 'Aug 1, 2025',
+      expiry: 'Aug 1, 2026',
+      status: s.status,
+    }))
+  )
+  const [query, setQuery] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingCard, setEditingCard] = useState<LibraryCardRow | null>(null)
+  const [form, setForm] = useState<LibraryCardRow>({
+    cardNo: '',
+    name: '',
+    studentId: '',
+    course: 'BSCS',
+    issueDate: 'Aug 1, 2025',
+    expiry: 'Aug 1, 2026',
+    status: 'active',
+  })
+
+  const filteredCards = cards.filter((card) => {
+    const q = query.toLowerCase()
+    return !q || card.name.toLowerCase().includes(q) || card.cardNo.toLowerCase().includes(q) || card.studentId.toLowerCase().includes(q)
+  })
+
+  function openCreateModal() {
+    setEditingCard(null)
+    setForm({
+      cardNo: '',
+      name: '',
+      studentId: '',
+      course: 'BSCS',
+      issueDate: 'Aug 1, 2025',
+      expiry: 'Aug 1, 2026',
+      status: 'active',
+    })
+    setModalOpen(true)
+  }
+
+  function openEditModal(card: LibraryCardRow) {
+    setEditingCard(card)
+    setForm(card)
+    setModalOpen(true)
+  }
+
+  function closeModal() {
+    setModalOpen(false)
+    setEditingCard(null)
+  }
+
+  function handleSubmitCard() {
+    const card = {
+      cardNo: form.cardNo.trim(),
+      name: form.name.trim(),
+      studentId: form.studentId.trim(),
+      course: form.course.trim(),
+      issueDate: form.issueDate.trim(),
+      expiry: form.expiry.trim(),
+      status: form.status,
+    }
+
+    if (!card.cardNo || !card.name || !card.studentId) {
+      setMessage('Card number, student name, and student ID are required.')
+      return
+    }
+
+    setCards((current) => {
+      if (editingCard) {
+        return current.map((item) =>
+          item.cardNo === editingCard.cardNo ? { ...card } : item
+        )
+      }
+
+      return [card, ...current]
+    })
+
+    setMessage(editingCard ? 'Library card updated successfully.' : 'Library card issued successfully.')
+    closeModal()
+  }
+
+  function handleDeleteCard(cardNo: string) {
+    setCards((current) => current.filter((card) => card.cardNo !== cardNo))
+    setMessage('Library card deleted successfully.')
+  }
+
   return (
     <div>
       <PageHeader title="Library Cards" subtitle="Manage student library cards." />
+      {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
       <div className="flex justify-between items-center mb-5">
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></span>
-          <input type="text" placeholder="Search by card or student..." className="pl-10 pr-4 py-2.5 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by card or student..."
+            className="pl-10 pr-4 py-2.5 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+          />
         </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+        <button onClick={openCreateModal} className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
           <Icons.Plus />Issue Card
         </button>
       </div>
       <Table headers={['Card No.', 'Student', 'Student ID', 'Course', 'Issue Date', 'Expiry', 'Status', 'Actions']}>
-        {adminStudents.map((s, i) => (
-          <Tr key={i}>
-            <Td className="font-mono text-green-700 font-semibold text-sm">{s.card}</Td>
-            <Td className="font-medium">{s.name}</Td>
-            <Td className="font-mono text-xs text-gray-400">{s.id}</Td>
-            <Td>{s.course}</Td>
-            <Td>Aug 1, 2025</Td>
-            <Td>Aug 1, 2026</Td>
-            <Td><StatusBadge status={s.status} /></Td>
+        {filteredCards.map((card) => (
+          <Tr key={card.cardNo}>
+            <Td className="font-mono text-green-700 font-semibold text-sm">{card.cardNo}</Td>
+            <Td className="font-medium">{card.name}</Td>
+            <Td className="font-mono text-xs text-gray-400">{card.studentId}</Td>
+            <Td>{card.course}</Td>
+            <Td>{card.issueDate}</Td>
+            <Td>{card.expiry}</Td>
+            <Td><StatusBadge status={card.status} /></Td>
             <Td>
               <div className="flex gap-1.5">
-                <button className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Icons.Edit /></button>
-                <button className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Icons.Trash /></button>
+                <button onClick={() => openEditModal(card)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg"><Icons.Edit /></button>
+                <button onClick={() => handleDeleteCard(card.cardNo)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Icons.Trash /></button>
               </div>
             </Td>
           </Tr>
         ))}
       </Table>
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-2xl rounded-2xl border border-green-200 bg-white p-6 shadow-2xl shadow-green-900/10">
+            <div className="mb-6 flex items-center justify-between border-b border-green-100 pb-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-green-600">Library card</p>
+                <h3 className="text-2xl font-bold text-green-900">{editingCard ? 'Edit Library Card' : 'Issue Library Card'}</h3>
+              </div>
+              <button onClick={closeModal} className="flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"><Icons.X /></button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Card No.</label>
+                <input value={form.cardNo} onChange={(e) => setForm({ ...form, cardNo: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" placeholder="LC-0105" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Student Name</label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" placeholder="Jane Doe" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Student ID</label>
+                <input value={form.studentId} onChange={(e) => setForm({ ...form, studentId: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" placeholder="STU-2024-010" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Course</label>
+                <select value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
+                  {['BSCS', 'BSIT', 'BSECE', 'BSME', 'BSIS'].map((course) => <option key={course} value={course}>{course}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Issue Date</label>
+                <input value={form.issueDate} onChange={(e) => setForm({ ...form, issueDate: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Expiry</label>
+                <input value={form.expiry} onChange={(e) => setForm({ ...form, expiry: e.target.value })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</label>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'active' | 'suspended' })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
+                  <option value="active">Active</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-green-100 pt-5">
+              <button onClick={closeModal} className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50">Cancel</button>
+              <button onClick={handleSubmitCard} className="rounded-xl bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition hover:bg-green-700">{editingCard ? 'Update Card' : 'Save Card'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function AdminReports() {
+  function handleGenerate(reportName: string) {
+    window.alert(`${reportName} generated successfully.`)
+  }
+
   return (
     <div>
       <PageHeader title="Reports" subtitle="Generate and export library activity reports." />
@@ -1375,7 +2224,7 @@ function AdminReports() {
               <div className="font-semibold text-gray-900 text-sm">{r.title}</div>
               <div className="text-xs text-gray-500 mt-0.5">{r.desc}</div>
             </div>
-            <button className="mt-auto py-2 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
+            <button onClick={() => handleGenerate(r.title)} className="mt-auto py-2 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
               Generate PDF
             </button>
           </div>
@@ -1386,30 +2235,77 @@ function AdminReports() {
 }
 
 function AdminSettings() {
+  const [form, setForm] = useState({
+    library_name: 'Greenfield College Library',
+    borrow_period_days: '14',
+    max_books_per_student: '3',
+    fine_per_day: '5.00',
+    admin_email: 'librarian@college.edu',
+  })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchSettings()
+      .then((settings) => {
+        setForm({
+          library_name: settings.library_name ?? 'Greenfield College Library',
+          borrow_period_days: String(settings.borrow_period_days ?? 14),
+          max_books_per_student: String(settings.max_books_per_student ?? 3),
+          fine_per_day: String(settings.fine_per_day ?? 5),
+          admin_email: settings.admin_email ?? 'librarian@college.edu',
+        })
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSaveSettings() {
+    try {
+      setSaving(true)
+      setMessage(null)
+      await saveSettings({
+        library_name: form.library_name,
+        borrow_period_days: Number(form.borrow_period_days) || 14,
+        max_books_per_student: Number(form.max_books_per_student) || 3,
+        fine_per_day: Number(form.fine_per_day) || 5,
+        admin_email: form.admin_email,
+      })
+      setMessage('Library settings saved to the database.')
+    } catch (err: any) {
+      setMessage(err?.message || 'Failed to save settings.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Settings" subtitle="Configure library system settings." />
       <div className="max-w-lg bg-white rounded-xl border border-green-100 shadow-sm p-6">
         <div className="flex flex-col gap-5">
           {[
-            { label: 'Library Name', value: 'Greenfield College Library' },
-            { label: 'Borrow Period (days)', value: '14' },
-            { label: 'Max Books Per Student', value: '3' },
-            { label: 'Fine Per Day (₱)', value: '5.00' },
-            { label: 'Admin Email', value: 'librarian@greenfield.edu' },
-          ].map(({ label, value }) => (
+            { label: 'Library Name', key: 'library_name' },
+            { label: 'Borrow Period (days)', key: 'borrow_period_days' },
+            { label: 'Max Books Per Student', key: 'max_books_per_student' },
+            { label: 'Fine Per Day (₱)', key: 'fine_per_day' },
+            { label: 'Admin Email', key: 'admin_email' },
+          ].map(({ label, key }) => (
             <div key={label}>
               <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
               <input
                 type="text"
-                defaultValue={value}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+                value={(form as any)[key]}
+                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                disabled={loading}
+                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition disabled:opacity-60"
               />
             </div>
           ))}
-          <button className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
-            Save Settings
+          <button onClick={handleSaveSettings} disabled={saving || loading} className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
+            {saving ? 'Saving...' : 'Save Settings'}
           </button>
+          {message && <div className="text-sm text-green-700">{message}</div>}
         </div>
       </div>
     </div>
@@ -1417,7 +2313,7 @@ function AdminSettings() {
 }
 
 // ─── Student Layout ────────────────────────────────────────────────────────────
-function StudentLayout({ onLogout }: { onLogout: () => void }) {
+function StudentLayout({ onLogout, studentId }: { onLogout: () => void; studentId?: string }) {
   const [view, setView] = useState<StudentView>('dashboard')
 
   const navItems = [
@@ -1433,7 +2329,7 @@ function StudentLayout({ onLogout }: { onLogout: () => void }) {
   const renderView = () => {
     switch (view) {
       case 'dashboard': return <StudentDashboard onNavigate={setView} />
-      case 'search': return <SearchBooks />
+      case 'search': return <SearchBooks studentId={studentId} />
       case 'borrowed': return <MyBorrowedBooks />
       case 'history': return <BorrowingHistory />
       case 'borrower-card': return <StudentBorrowerCard />
@@ -1443,7 +2339,7 @@ function StudentLayout({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-green-50">
+    <div className="flex min-h-screen w-full bg-green-50">
       <Sidebar
         items={navItems}
         active={view}
@@ -1452,14 +2348,14 @@ function StudentLayout({ onLogout }: { onLogout: () => void }) {
         title="Student Portal"
       />
       <main className="flex-1 overflow-auto">
-        <div className="p-6 lg:p-8 max-w-5xl">{renderView()}</div>
+        <div className="w-full p-6 lg:p-8">{renderView()}</div>
       </main>
     </div>
   )
 }
 
 // ─── Admin Layout ──────────────────────────────────────────────────────────────
-function AdminLayout({ onLogout }: { onLogout: () => void }) {
+function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?: any | null }) {
   const [view, setView] = useState<AdminView>('dashboard')
 
   const navItems = [
@@ -1477,7 +2373,7 @@ function AdminLayout({ onLogout }: { onLogout: () => void }) {
 
   const renderView = () => {
     switch (view) {
-      case 'dashboard': return <AdminDashboard />
+      case 'dashboard': return <AdminDashboard dashboard={dashboard} />
       case 'books': return <AdminBooks />
       case 'students': return <AdminStudents />
       case 'library-cards': return <AdminLibraryCards />
@@ -1491,7 +2387,7 @@ function AdminLayout({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-green-50">
+    <div className="flex min-h-screen w-full bg-green-50">
       <Sidebar
         items={navItems}
         active={view}
@@ -1500,31 +2396,81 @@ function AdminLayout({ onLogout }: { onLogout: () => void }) {
         title="Librarian Portal"
       />
       <main className="flex-1 overflow-auto">
-        <div className="p-6 lg:p-8 max-w-6xl">{renderView()}</div>
+        <div className="w-full p-6 lg:p-8">{renderView()}</div>
       </main>
     </div>
   )
 }
 
-// ─── Root ──────────────────────────────────────────────────────────────────────
+function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
+  const stats = dashboard?.stats ?? null
+  const recent = dashboard?.records ?? borrowingRecords
+  const overdue = dashboard?.overdue ?? overdueRecords
+
+  const totalBooks = stats?.totalBooks ?? adminBooks.reduce((s, b) => s + (b.copies || 0), 0)
+  const availableBooks = stats?.availableBooks ?? adminBooks.reduce((s, b) => s + (b.available || 0), 0)
+  const borrowedBooks = stats?.borrowedBooks ?? totalBooks - availableBooks
+  const overdueBooks = stats?.overdueBooks ?? overdue.length
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2 className="text-xl font-bold text-green-900">Admin Dashboard</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Library overview and statistics — August 2025.</p>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatCard label="Total Books" value={totalBooks} color="text-green-700" />
+        <StatCard label="Available Books" value={availableBooks} color="text-green-600" />
+        <StatCard label="Borrowed Books" value={borrowedBooks} color="text-blue-600" />
+        <StatCard label="Overdue Books" value={overdueBooks} color="text-red-600" />
+      </div>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-base font-semibold text-green-900 mb-3">Recent Borrowing Records</h3>
+          <Table headers={["Student", "Book", "Due Date", "Status"]}>
+            {recent.slice(0, 4).map((r: any) => (
+              <Tr key={r.txn}>
+                <Td className="font-medium">{r.student}</Td>
+                <Td className="text-gray-500 text-xs">{r.book}</Td>
+                <Td>{r.due}</Td>
+                <Td><StatusBadge status={r.status} /></Td>
+              </Tr>
+            ))}
+          </Table>
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-green-900 mb-3">Overdue Alert</h3>
+          <Table headers={["Student", "Book", "Days Overdue"]}>
+            {overdue.map((r: any, i: number) => (
+              <Tr key={i}>
+                <Td className="font-medium">{r.student}</Td>
+                <Td className="text-gray-500 text-xs">{r.book}</Td>
+                <Td className="text-red-600 font-semibold">{r.daysOverdue}d</Td>
+              </Tr>
+            ))}
+          </Table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Root App ───────────────────────────────────────────────────────────────
 export default function App() {
   const [auth, setAuth] = useState<{ role: Role; userId?: string; studentId?: string } | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
 
-  // handle login using API.login
   async function handleLogin(role: Role, email: string, password: string) {
     const res = await login(email, password, role)
     setAuth({ role, userId: res.user?.id, studentId: res.student?.id })
   }
 
-  // load dashboard data for admin
+  // admin realtime: load dashboard and subscribe to updates
   useEffect(() => {
     if (!auth) return
-
     let sub: any
     if (auth.role === 'admin') {
       loadDashboardData().then((d) => setDashboard(d)).catch(() => { })
-      // subscribe to realtime changes for borrowing_records and books
       sub = supabase
         .channel('public:borrowing_records')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'borrowing_records' }, () => {
@@ -1536,9 +2482,7 @@ export default function App() {
         .subscribe()
     }
 
-    return () => {
-      if (sub) supabase.removeChannel(sub)
-    }
+    return () => { if (sub) supabase.removeChannel(sub) }
   }, [auth])
 
   // student realtime: subscribe to student's borrowing records
@@ -1557,6 +2501,6 @@ export default function App() {
   }, [auth])
 
   if (!auth) return <LoginPage onLogin={handleLogin} />
-  if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} />
-  return <AdminLayout onLogout={() => setAuth(null)} />
+  if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} />
+  return <AdminLayout onLogout={() => setAuth(null)} dashboard={dashboard} />
 }
