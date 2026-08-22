@@ -2,7 +2,7 @@
 -- Instructions: Paste all of this into your Supabase SQL editor for the project referenced by VITE_SUPABASE_URL in your .env. Run as a single script.
 
 -- 0) Ensure pgcrypto exists for gen_random_uuid()
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";npm run dev
 
 -- 1) Timestamped backups for key tables (safe, non-destructive)
 DO $$

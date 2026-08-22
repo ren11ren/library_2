@@ -1165,6 +1165,7 @@ function AdminBooks() {
     copies: '1',
     damaged: '0',
     lost: '0',
+    cover_url: '',
   })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<typeof adminBooks[number] | null>(null)
@@ -1182,12 +1183,15 @@ function AdminBooks() {
     if (!file) {
       setCoverPreview(null)
       setCoverFileName('No file chosen')
+      setForm((current) => ({ ...current, cover_url: '' }))
       return
     }
 
     const reader = new FileReader()
     reader.onload = () => {
-      setCoverPreview(String(reader.result))
+      const value = String(reader.result)
+      setCoverPreview(value)
+      setForm((current) => ({ ...current, cover_url: value }))
     }
     reader.readAsDataURL(file)
     setCoverFileName(file.name)
@@ -1206,6 +1210,7 @@ function AdminBooks() {
       copies: '1',
       damaged: '0',
       lost: '0',
+      cover_url: '',
     })
     setCoverPreview(null)
     setCoverFileName('No file chosen')
@@ -1220,6 +1225,7 @@ function AdminBooks() {
   }
 
   function startEditBook(book: typeof adminBooks[number]) {
+    const coverUrl = (book as any).cover_url || null
     setEditingId(book.id)
     setForm({
       book_code: book.id,
@@ -1233,7 +1239,10 @@ function AdminBooks() {
       copies: String(book.copies),
       damaged: '0',
       lost: '0',
+      cover_url: coverUrl || '',
     })
+    setCoverPreview(coverUrl)
+    setCoverFileName(coverUrl ? 'Uploaded cover' : 'No file chosen')
     setShowForm(true)
     setMessage(null)
   }
@@ -1263,6 +1272,7 @@ function AdminBooks() {
         price: Number(form.price) || 0,
         damaged: Number(form.damaged) || 0,
         lost: Number(form.lost) || 0,
+        cover_url: form.cover_url || null,
       }
 
       const saved = await upsertBook({
@@ -1285,6 +1295,7 @@ function AdminBooks() {
           available: saved.available ?? payload.available,
           rack: 'R1',
           updatedOn: now,
+          cover_url: (saved as any).cover_url ?? (saved as any).coverUrl ?? payload.cover_url ?? null,
         }
         return [item, ...next]
       })
@@ -1491,9 +1502,13 @@ function AdminBooks() {
               <tr key={b.id} className="bg-white hover:bg-green-50/50 transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-14 w-12 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-white to-blue-50 text-[10px] font-bold text-blue-700 shadow-sm">
-                      {b.title.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
-                    </div>
+                    {(b as any).cover_url ? (
+                      <img src={(b as any).cover_url} alt={b.title} className="h-14 w-12 rounded-md border border-gray-200 object-cover shadow-sm" />
+                    ) : (
+                      <div className="flex h-14 w-12 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-white to-blue-50 text-[10px] font-bold text-blue-700 shadow-sm">
+                        {b.title.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
+                      </div>
+                    )}
                     <div>
                       <div className="font-medium text-gray-900">{b.title}</div>
                     </div>
