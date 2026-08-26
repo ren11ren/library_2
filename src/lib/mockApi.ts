@@ -115,8 +115,9 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
 
 export async function upsertAppUser(user: { email: string; password?: string; role?: UserRole; student_id?: string | null }) {
     const existing = APP_USERS.find((u) => u.email === user.email)
-    if (existing) Object.assign(existing, user)
-    else APP_USERS.push({ id: crypto.randomUUID(), ...user })
+    const payload = { ...user, password: user.password ?? 'user123', role: user.role ?? 'student' }
+    if (existing) Object.assign(existing, payload)
+    else APP_USERS.push({ id: crypto.randomUUID(), ...payload })
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
     return APP_USERS.find((u) => u.email === user.email)
 }

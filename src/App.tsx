@@ -9,11 +9,11 @@ import {
   fetchSettings,
   upsertBook,
   upsertStudent,
+  upsertAppUser,
   deleteBook,
   deleteStudent,
   markReminderSent,
 } from './lib/api'
-import { supabase } from './lib/supabase'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Role = 'student' | 'admin'
@@ -229,7 +229,9 @@ const adminBooks = [
   { id: 'BK-006', isbn: '9780073523323', title: 'Database System Concepts', author: 'Silberschatz et al.', publisher: 'McGraw Hill', category: 'T - Technology and Engineering', copies: 5, available: 4, rack: 'R5', updatedOn: '2022-06-12 09:15:41' },
 ]
 
-const adminStudents = [
+type StudentStatus = 'active' | 'suspended'
+
+const adminStudents: Array<{ id: string; name: string; course: string; card: string; email: string; status: StudentStatus }> = [
   { id: 'STU-2021-001', name: 'Maria Santos', course: 'BSCS', card: 'LC-0042', email: 'maria.santos@college.edu', status: 'active' },
   { id: 'STU-2021-002', name: 'Juan dela Cruz', course: 'BSIT', card: 'LC-0043', email: 'juan.delacruz@college.edu', status: 'active' },
   { id: 'STU-2022-015', name: 'Ana Reyes', course: 'BSCS', card: 'LC-0061', email: 'ana.reyes@college.edu', status: 'suspended' },
@@ -1284,15 +1286,15 @@ function AdminBooks() {
 
       setBooks((current) => {
         const next = current.filter((book) => book.id !== (saved.id ?? editingId ?? book.id))
-        const item = {
+        const item: any = {
           id: saved.id ?? payload.book_code,
-          isbn: saved.isbn ?? payload.isbn,
-          title: saved.title ?? title,
-          author: saved.author ?? author,
-          publisher: saved.publisher ?? payload.publisher,
-          category: saved.category ?? payload.category,
-          copies: saved.copies ?? payload.copies,
-          available: saved.available ?? payload.available,
+          isbn: (saved as any).isbn ?? payload.isbn,
+          title: (saved as any).title ?? title,
+          author: (saved as any).author ?? author,
+          publisher: (saved as any).publisher ?? payload.publisher,
+          category: (saved as any).category ?? payload.category,
+          copies: (saved as any).copies ?? payload.copies,
+          available: (saved as any).available ?? payload.available,
           rack: 'R1',
           updatedOn: now,
           cover_url: (saved as any).cover_url ?? (saved as any).coverUrl ?? payload.cover_url ?? null,
@@ -1585,7 +1587,7 @@ function AdminStudents() {
     course: 'BSCS',
     card: '',
     email: '',
-    status: 'active' as 'active' | 'suspended',
+    status: 'active' as StudentStatus,
   })
 
   const filtered = students.filter((s) => {
@@ -1595,7 +1597,7 @@ function AdminStudents() {
 
   function openCreateForm() {
     setEditingId(null)
-    setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' })
+    setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' as StudentStatus })
     setShowForm(true)
     setMessage(null)
   }
@@ -1608,7 +1610,7 @@ function AdminStudents() {
       course: student.course,
       card: student.card,
       email: student.email,
-      status: student.status,
+      status: student.status as StudentStatus,
     })
     setShowForm(true)
     setMessage(null)
@@ -1641,6 +1643,13 @@ function AdminStudents() {
         status: trimmed.status,
       } as any)
 
+      await upsertAppUser({
+        email: trimmed.email,
+        password: 'user123',
+        role: 'student',
+        student_id: saved.id,
+      })
+
       setStudents((current) => {
         const next = current.filter((s) => s.id !== (saved.id ?? editingId ?? s.id))
         const item = {
@@ -1656,7 +1665,7 @@ function AdminStudents() {
 
       setShowForm(false)
       setEditingId(null)
-      setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' })
+      setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' as StudentStatus })
       setMessage('Student saved successfully.')
     } catch (err: any) {
       setMessage(err?.message || 'Unable to save the student.')
@@ -1719,7 +1728,7 @@ function AdminStudents() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'active' | 'suspended' })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StudentStatus })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
                   <option value="active">Active</option>
                   <option value="suspended">Suspended</option>
                 </select>
@@ -2026,7 +2035,7 @@ function AdminLibraryCards() {
     course: string
     issueDate: string
     expiry: string
-    status: 'active' | 'suspended'
+    status: StudentStatus
   }
 
   const [cards, setCards] = useState<LibraryCardRow[]>(() =>
@@ -2037,7 +2046,7 @@ function AdminLibraryCards() {
       course: s.course,
       issueDate: 'Aug 1, 2025',
       expiry: 'Aug 1, 2026',
-      status: s.status,
+      status: s.status as StudentStatus,
     }))
   )
   const [query, setQuery] = useState('')
@@ -2198,7 +2207,7 @@ function AdminLibraryCards() {
               </div>
               <div className="md:col-span-2">
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">Status</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as 'active' | 'suspended' })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StudentStatus })} className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100">
                   <option value="active">Active</option>
                   <option value="suspended">Suspended</option>
                 </select>
@@ -2480,39 +2489,16 @@ export default function App() {
     setAuth({ role, userId: res.user?.id, studentId: res.student?.id })
   }
 
-  // admin realtime: load dashboard and subscribe to updates
   useEffect(() => {
     if (!auth) return
-    let sub: any
+
     if (auth.role === 'admin') {
       loadDashboardData().then((d) => setDashboard(d)).catch(() => { })
-      sub = supabase
-        .channel('public:borrowing_records')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'borrowing_records' }, () => {
-          loadDashboardData().then((d) => setDashboard(d)).catch(() => { })
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'books' }, () => {
-          loadDashboardData().then((d) => setDashboard(d)).catch(() => { })
-        })
-        .subscribe()
     }
 
-    return () => { if (sub) supabase.removeChannel(sub) }
-  }, [auth])
-
-  // student realtime: subscribe to student's borrowing records
-  useEffect(() => {
-    if (!auth || auth.role !== 'student' || !auth.studentId) return
-    let sub: any
-    fetchStudentBorrowingRecords(auth.studentId).then(() => { })
-    sub = supabase
-      .channel(`student:${auth.studentId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'borrowing_records', filter: `student_id=eq.${auth.studentId}` }, () => {
-        fetchStudentBorrowingRecords(auth.studentId).then(() => { })
-      })
-      .subscribe()
-
-    return () => { if (sub) supabase.removeChannel(sub) }
+    if (auth.role === 'student' && auth.studentId) {
+      fetchStudentBorrowingRecords(auth.studentId).then(() => { }).catch(() => { })
+    }
   }, [auth])
 
   if (!auth) return <LoginPage onLogin={handleLogin} />
