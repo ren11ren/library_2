@@ -600,35 +600,119 @@ function StudentBorrowerCard() {
 }
 
 function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void }) {
+  const fines = 20
+  const overdueCount = borrowedBooks.filter((b) => b.status === 'overdue').length
+  const dueSoonCount = borrowedBooks.filter((b) => b.status === 'due-soon').length
+  const currentlyBorrowed = borrowedBooks.length
+
+  const announcements = [
+    { title: 'Library Hours Extended', date: 'Aug 10, 2025', text: 'The library will be open until 9:00 PM during final exams week (Aug 18–22).' },
+    { title: 'New Books Arrived', date: 'Aug 5, 2025', text: '48 new titles added to the Computer Science section. Check Search Books to explore.' },
+    { title: 'Fine Waiver Program', date: 'Jul 28, 2025', text: 'Overdue fines from June 2025 are waived if books are returned before August 20.' },
+  ]
+
+  const nextDue = borrowedBooks.find((b) => b.status === 'due-soon') ?? borrowedBooks[0]
+
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-green-900">Welcome back, Maria!</h2>
-        <p className="text-sm text-gray-500 mt-0.5">Here's an overview of your library activity.</p>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <StatCard label="Currently Borrowed" value={3} color="text-green-700" />
-        <StatCard label="Due Soon" value={1} color="text-orange-500" />
-        <StatCard label="Overdue" value={1} color="text-red-600" />
-      </div>
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-base font-semibold text-green-900">Recent Borrowed Books</h3>
-          <button onClick={() => onNavigate('borrowed')} className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">
-            View all <Icons.ChevronRight />
-          </button>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-green-900">Welcome back, Maria!</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Tuesday, August 12, 2025 — Greenfield College Library</p>
         </div>
-        <Table headers={['Book Title', 'Author', 'Borrow Date', 'Due Date', 'Status']}>
-          {borrowedBooks.map((b) => (
-            <Tr key={b.id}>
-              <Td className="font-medium text-gray-900">{b.title}</Td>
-              <Td>{b.author}</Td>
-              <Td>{b.borrowDate}</Td>
-              <Td>{b.dueDate}</Td>
-              <Td><StatusBadge status={b.status} /></Td>
-            </Tr>
-          ))}
-        </Table>
+        <div className="text-sm text-gray-400">Last updated: Aug 12, 2025</div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard label="Currently Borrowed" value={currentlyBorrowed} color="text-green-700" />
+            <StatCard label="Due Soon" value={dueSoonCount} color="text-orange-500" />
+            <StatCard label="Overdue" value={overdueCount} color="text-red-600" />
+            <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+              <span className="text-sm text-gray-500 font-medium">Accrued Fines</span>
+              <div className="text-2xl font-bold text-red-600 mt-2">₱{fines.toFixed(2)}</div>
+            </div>
+          </div>
+
+          {overdueCount > 0 && (
+            <div className="rounded-lg border border-red-100 bg-red-50/60 p-4">
+              <div className="flex items-start gap-3">
+                <div className="text-red-600"><Icons.AlertCircle /></div>
+                <div>
+                  <div className="font-semibold text-red-700">Overdue Notice</div>
+                  <div className="text-sm text-red-600 mt-1">You have {overdueCount} overdue book(s). A fine of ₱5/day is applied. Please return immediately.</div>
+                  <button onClick={() => onNavigate('borrowed')} className="mt-2 text-sm text-red-700 font-medium underline">View overdue books →</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-green-900">Active Loans</h3>
+              <button onClick={() => onNavigate('borrowed')} className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
+            </div>
+            <Table headers={["Book Title", "Due Date", "Status", "Action"]}>
+              {borrowedBooks.map((b) => (
+                <Tr key={b.id}>
+                  <Td className="font-medium text-gray-900">{b.title}</Td>
+                  <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>{b.dueDate}</Td>
+                  <Td><StatusBadge status={b.status} /></Td>
+                  <Td>
+                    <button onClick={() => onNavigate('borrower-card')} className="px-3 py-1.5 border border-green-200 text-green-700 text-xs font-medium rounded-lg hover:bg-green-50 transition-colors">View Card</button>
+                  </Td>
+                </Tr>
+              ))}
+            </Table>
+          </div>
+
+          <div className="mt-4 bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+            <h3 className="text-base font-semibold text-green-900 mb-3">Library Announcements</h3>
+            <div className="space-y-3 text-sm text-gray-700">
+              {announcements.map((a, i) => (
+                <div key={i} className="rounded-lg border border-green-50 p-3 bg-green-50/40">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-gray-800">{a.title}</div>
+                    <div className="text-xs text-gray-400">{a.date}</div>
+                  </div>
+                  <div className="text-sm text-gray-600 mt-1">{a.text}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <aside className="space-y-4">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Next Due Dates</div>
+            {nextDue ? (
+              <div className="mt-3 p-3 rounded-lg bg-orange-50 border border-orange-100">
+                <div className="text-xs text-gray-500">{nextDue.title}</div>
+                <div className="text-lg font-bold text-orange-600 mt-1">{nextDue.dueDate}</div>
+                <div className="text-xs text-gray-400 mt-1">Due Aug 15, 2025</div>
+              </div>
+            ) : <div className="mt-2 text-sm text-gray-500">No upcoming due dates.</div>}
+          </div>
+
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <h4 className="text-sm font-semibold text-green-900">Quick Actions</h4>
+            <div className="mt-3 flex flex-col gap-3">
+              <button onClick={() => onNavigate('search')} className="py-2.5 bg-green-600 text-white rounded-lg">Search & Borrow Books</button>
+              <button onClick={() => onNavigate('borrower-card')} className="py-2.5 border border-green-200 text-green-700 rounded-lg">View Borrower Card</button>
+              <button onClick={() => onNavigate('card')} className="py-2.5 border border-green-200 text-green-700 rounded-lg">My Library Card</button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Library Hours</div>
+            <div className="mt-2 text-sm text-gray-700">
+              <div>Mon-Fri: 7:00 AM – 8:00 PM</div>
+              <div>Saturday: 8:00 AM – 5:00 PM</div>
+              <div>Sunday: Closed</div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   )
@@ -2435,44 +2519,170 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const availableBooks = stats?.availableBooks ?? adminBooks.reduce((s, b) => s + (b.available || 0), 0)
   const borrowedBooks = stats?.borrowedBooks ?? totalBooks - availableBooks
   const overdueBooks = stats?.overdueBooks ?? overdue.length
+  const totalStudents = stats?.totalStudents ?? adminStudents.length
+  const thisMonthTx = stats?.thisMonthTx ?? 87
+
+  const monthlyBorrowings = stats?.monthlyBorrowings ?? [58, 74, 91, 67, 112, 87]
+  const categoryCounts = stats?.categoryCounts ?? [
+    { name: 'T - Technology', count: 11 },
+    { name: 'Q - Science', count: 8 },
+    { name: 'P - Language', count: 3 },
+    { name: 'H - Social Sci', count: 2 },
+  ]
+
+  const maxMonth = Math.max(...monthlyBorrowings, 1)
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-green-900">Admin Dashboard</h2>
-        <p className="text-sm text-gray-500 mt-0.5">Library overview and statistics — August 2025.</p>
-      </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Books" value={totalBooks} color="text-green-700" />
-        <StatCard label="Available Books" value={availableBooks} color="text-green-600" />
-        <StatCard label="Borrowed Books" value={borrowedBooks} color="text-blue-600" />
-        <StatCard label="Overdue Books" value={overdueBooks} color="text-red-600" />
-      </div>
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-base font-semibold text-green-900 mb-3">Recent Borrowing Records</h3>
-          <Table headers={["Student", "Book", "Due Date", "Status"]}>
-            {recent.slice(0, 4).map((r: any) => (
-              <Tr key={r.txn}>
-                <Td className="font-medium">{r.student}</Td>
-                <Td className="text-gray-500 text-xs">{r.book}</Td>
-                <Td>{r.due}</Td>
-                <Td><StatusBadge status={r.status} /></Td>
-              </Tr>
-            ))}
-          </Table>
+          <h2 className="text-xl font-bold text-green-900">Admin Dashboard</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Library overview — August 2025</p>
         </div>
+        <div className="text-sm text-gray-400">Last updated: Aug 12, 2025 · 08:30</div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        <div className="col-span-2 md:col-span-1 lg:col-span-1">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Total Books</div>
+            <div className="mt-2 text-2xl font-bold text-green-800">{totalBooks}</div>
+            <div className="text-xs text-gray-400 mt-1">6 titles</div>
+          </div>
+        </div>
+        <div className="col-span-2 md:col-span-1 lg:col-span-1">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Available Books</div>
+            <div className="mt-2 text-2xl font-bold text-green-700">{availableBooks}</div>
+            <div className="text-xs text-gray-400 mt-1">{Math.round((availableBooks / Math.max(totalBooks,1)) * 100)}% available</div>
+          </div>
+        </div>
+        <div className="col-span-2 md:col-span-1 lg:col-span-1">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Borrowed Books</div>
+            <div className="mt-2 text-2xl font-bold text-blue-600">{borrowedBooks}</div>
+            <div className="text-xs text-gray-400 mt-1">currently on loan</div>
+          </div>
+        </div>
+        <div className="col-span-2 md:col-span-1 lg:col-span-1">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Overdue Books</div>
+            <div className="mt-2 text-2xl font-bold text-red-600">{overdueBooks}</div>
+            <div className="text-xs text-gray-400 mt-1">require attention</div>
+          </div>
+        </div>
+        <div className="col-span-2 md:col-span-1 lg:col-span-1">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Total Students</div>
+            <div className="mt-2 text-2xl font-bold text-indigo-600">{totalStudents}</div>
+            <div className="text-xs text-gray-400 mt-1">4 active</div>
+          </div>
+        </div>
+        <div className="col-span-2 md:col-span-1 lg:col-span-1">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">This Month</div>
+            <div className="mt-2 text-2xl font-bold text-green-600">{thisMonthTx}</div>
+            <div className="text-xs text-gray-400 mt-1">transactions</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-green-900">Monthly Borrowings</h3>
+              <div className="text-sm text-gray-400">Mar - Aug 2025</div>
+            </div>
+
+            <div className="grid grid-cols-6 gap-3 items-end h-36">
+              {monthlyBorrowings.map((v, i) => {
+                const height = Math.round((v / maxMonth) * 100)
+                return (
+                  <div key={i} className="flex flex-col items-center gap-2">
+                    <div className="w-full flex items-end">
+                      <div className="w-full rounded-t-md bg-green-600" style={{ height: `${height}%` }} />
+                    </div>
+                    <div className="text-xs text-gray-500">{['Mar','Apr','May','Jun','Jul','Aug'][i]}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="mt-6 bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-green-900">Recent Borrowing Records</h3>
+              <button className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
+            </div>
+            <Table headers={["Student","Book","Due Date","Status"]}>
+              {recent.slice(0,6).map((r: any, idx: number) => (
+                <Tr key={r.txn ?? idx}>
+                  <Td className="font-medium">{r.student}</Td>
+                  <Td className="text-gray-500 text-xs">{r.book}</Td>
+                  <Td>{r.due}</Td>
+                  <Td><StatusBadge status={r.status} /></Td>
+                </Tr>
+              ))}
+            </Table>
+          </div>
+        </div>
+
         <div>
-          <h3 className="text-base font-semibold text-green-900 mb-3">Overdue Alert</h3>
-          <Table headers={["Student", "Book", "Days Overdue"]}>
-            {overdue.map((r: any, i: number) => (
-              <Tr key={i}>
-                <Td className="font-medium">{r.student}</Td>
-                <Td className="text-gray-500 text-xs">{r.book}</Td>
-                <Td className="text-red-600 font-semibold">{r.daysOverdue}d</Td>
-              </Tr>
-            ))}
-          </Table>
+          <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-green-900">Books by Category</h3>
+              <div className="text-xs text-gray-400">11 titles</div>
+            </div>
+            <div className="space-y-3">
+              {categoryCounts.map((c: any, i: number) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="flex-1 text-sm text-gray-700">{c.name}</div>
+                  <div className="w-36 bg-green-50 rounded-full h-3 overflow-hidden">
+                    <div className="h-3 bg-green-600" style={{ width: `${Math.min(100, (c.count / (categoryCounts[0].count || 1)) * 100)}%` }} />
+                  </div>
+                  <div className="text-xs text-gray-500 w-8 text-right">{c.count}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm mb-4">
+            <h3 className="text-base font-semibold text-green-900 mb-3">Recent Activity</h3>
+            <div className="space-y-3 text-sm text-gray-600">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600"><Icons.Bell /></div>
+                <div>
+                  <div className="font-medium text-gray-800">Maria Santos borrowed "Introduction to Algorithms"</div>
+                  <div className="text-xs text-gray-400">2d ago</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600"><Icons.Check /></div>
+                <div>
+                  <div className="font-medium text-gray-800">Carlo Bautista returned "Discrete Mathematics"</div>
+                  <div className="text-xs text-gray-400">4d ago</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600"><Icons.AlertCircle /></div>
+                <div>
+                  <div className="font-medium text-gray-800">Ana Reyes overdue reminder sent</div>
+                  <div className="text-xs text-gray-400">6d ago</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <h3 className="text-base font-semibold text-green-900 mb-3">Quick Actions</h3>
+            <div className="flex flex-col gap-3">
+              <button className="flex items-center gap-2 py-2.5 px-3 bg-green-600 text-white rounded-lg"> <Icons.Plus /> Add New Book</button>
+              <button className="flex items-center gap-2 py-2.5 px-3 bg-green-800 text-white rounded-lg"> <Icons.User /> Add Student</button>
+              <button className="flex items-center gap-2 py-2.5 px-3 border border-green-200 text-green-700 rounded-lg"> <Icons.RefreshCw /> Process Return</button>
+              <button className="flex items-center gap-2 py-2.5 px-3 bg-red-500 text-white rounded-lg"> <Icons.AlertCircle /> View Overdue</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
