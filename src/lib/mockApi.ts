@@ -1,4 +1,5 @@
-import defaultMockData from './mockData.json'
+// Note: mock data has been migrated to the Supabase schema.sql.
+// This module no longer bundles the large mock JSON; it falls back to empty data.
 import type {
     AuthSession,
     Book,
@@ -19,7 +20,15 @@ function loadMockData() {
     } catch (e) {
         // ignore
     }
-    return (defaultMockData as any)
+    // Return empty default shapes when no persisted local data exists.
+    return {
+        books: [],
+        students: [],
+        app_users: [],
+        library_cards: [],
+        borrowing_records: [],
+        settings: { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' }
+    }
 }
 
 function saveMockData(data: any) {

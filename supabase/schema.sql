@@ -196,3 +196,115 @@ BEGIN
     ON CONFLICT DO NOTHING;
   END IF;
 END $$;
+
+-- Additional tables to hold migrated mock data (keeps profiles/auth separate)
+CREATE TABLE IF NOT EXISTS public.students (
+  id UUID PRIMARY KEY,
+  student_code TEXT UNIQUE,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  course TEXT,
+  year_level TEXT,
+  status TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.library_cards (
+  id UUID PRIMARY KEY,
+  card_no TEXT UNIQUE NOT NULL,
+  student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  issue_date DATE,
+  expiry_date DATE,
+  status TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.borrowing_records (
+  id UUID PRIMARY KEY,
+  txn_code TEXT UNIQUE,
+  student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  book_id UUID NOT NULL,
+  borrow_date DATE,
+  due_date DATE,
+  return_date DATE,
+  status TEXT,
+  notified BOOLEAN DEFAULT FALSE,
+  condition TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.app_users (
+  id UUID PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  password TEXT,
+  role TEXT,
+  student_id UUID REFERENCES public.students(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.settings (
+  id INTEGER PRIMARY KEY,
+  library_name TEXT,
+  borrow_period_days INTEGER,
+  max_books_per_student INTEGER,
+  fine_per_day NUMERIC,
+  admin_email TEXT
+);
+
+-- Insert mock students
+INSERT INTO public.students (id, student_code, name, email, course, year_level, status, created_at)
+VALUES
+  ('11111111-1111-1111-1111-111111111111','STU-2021-001','Maria Santos','maria.santos@college.edu','BS Computer Science','4th Year','active','2025-01-01T00:00:00Z'),
+  ('11111111-1111-1111-1111-222222222222','STU-2021-002','Juan dela Cruz','juan.delacruz@college.edu','BSIT','4th Year','active','2025-01-02T00:00:00Z'),
+  ('11111111-1111-1111-1111-333333333333','STU-2022-015','Ana Reyes','ana.reyes@college.edu','BSCS','3rd Year','suspended','2026-01-01T00:00:00Z'),
+  ('11111111-1111-1111-1111-444444444444','STU-2023-008','Carlo Bautista','carlo.bautista@college.edu','BSECE','2nd Year','active','2025-06-01T00:00:00Z'),
+  ('11111111-1111-1111-1111-555555555555','STU-2023-019','Lena Villanueva','lena.villanueva@college.edu','BSME','2nd Year','active','2025-07-01T00:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert mock books (map book_code into isbn field to avoid schema change)
+INSERT INTO public.books (id, title, author, isbn, category, total_copies, available_copies, created_at)
+VALUES
+  ('11111111-aaaa-0000-0000-000000000001','Introduction to Algorithms','Cormen, Leiserson, Rivest','BK-001','Computer Science',3,2,'2025-01-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000002','The Art of Computer Programming','Donald E. Knuth','BK-002','Computer Science',2,0,'2025-02-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000003','Clean Code','Robert C. Martin','BK-003','Software Engineering',4,3,'2025-03-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000004','Design Patterns','Gang of Four','BK-004','Software Engineering',2,1,'2025-04-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000005','Structure and Interpretation','Abelson & Sussman','BK-005','Computer Science',1,1,'2025-05-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000006','Database System Concepts','Silberschatz et al.','BK-006','Database',5,4,'2025-06-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000007','Computer Networks','Andrew Tanenbaum','BK-007','Networking',3,3,'2025-07-01T00:00:00Z'),
+  ('11111111-aaaa-0000-0000-000000000008','Operating System Concepts','Silberschatz et al.','BK-008','Computer Science',2,2,'2025-08-01T00:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert library cards
+INSERT INTO public.library_cards (id, card_no, student_id, issue_date, expiry_date, status, created_at)
+VALUES
+  ('22222222-aaaa-0000-0000-000000000001','LC-0042','11111111-1111-1111-1111-111111111111','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
+  ('22222222-aaaa-0000-0000-000000000002','LC-0043','11111111-1111-1111-1111-222222222222','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
+  ('22222222-aaaa-0000-0000-000000000003','LC-0061','11111111-1111-1111-1111-333333333333','2025-08-01','2026-08-01','suspended','2025-08-01T00:00:00Z'),
+  ('22222222-aaaa-0000-0000-000000000004','LC-0089','11111111-1111-1111-1111-444444444444','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
+  ('22222222-aaaa-0000-0000-000000000005','LC-0104','11111111-1111-1111-1111-555555555555','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert borrowing records
+INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
+VALUES
+  ('33333333-aaaa-0000-000000000001','TXN-2025-001','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000001','2025-07-25','2025-08-08',NULL,'overdue',true,NULL,'2025-07-25T00:00:00Z'),
+  ('33333333-aaaa-0000-000000000002','TXN-2025-002','11111111-1111-1111-1111-222222222222','11111111-aaaa-0000-0000-000000000003','2025-08-01','2025-08-15',NULL,'due-soon',false,NULL,'2025-08-01T00:00:00Z'),
+  ('33333333-aaaa-0000-000000000003','TXN-2025-003','11111111-1111-1111-1111-444444444444','11111111-aaaa-0000-0000-000000000004','2025-08-05','2025-08-19',NULL,'active',false,NULL,'2025-08-05T00:00:00Z'),
+  ('33333333-aaaa-0000-000000000004','TXN-2025-004','11111111-1111-1111-1111-555555555555','11111111-aaaa-0000-0000-000000000006','2025-08-03','2025-08-17',NULL,'active',false,NULL,'2025-08-03T00:00:00Z'),
+  ('33333333-aaaa-0000-0000-000000000005','TXN-2025-005','11111111-1111-1111-1111-333333333333','11111111-aaaa-0000-0000-000000000002','2025-07-10','2025-07-24',NULL,'overdue',false,NULL,'2025-07-10T00:00:00Z'),
+  ('33333333-aaaa-0000-000000000006','TXN-2025-006','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000008','2025-06-01','2025-06-15','2025-06-15','returned',false,'Good','2025-06-01T00:00:00Z'),
+  ('33333333-aaaa-0000-000000000007','TXN-2025-007','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000005','2025-05-10','2025-05-22','2025-05-22','returned',false,'Good','2025-05-10T00:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert app users
+INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
+VALUES
+  ('22222222-2222-2222-2222-222222222222','maria.santos@college.edu','password123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
+  ('22222222-2222-2222-2222-333333333333','2021-001','password123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
+  ('33333333-3333-3333-3333-333333333333','librarian@college.edu','admin123','admin',NULL,'2025-01-01T00:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert settings
+INSERT INTO public.settings (id, library_name, borrow_period_days, max_books_per_student, fine_per_day, admin_email)
+VALUES (1,'Greenfield College Library',14,3,5.0,'librarian@greenfield.edu')
+ON CONFLICT (id) DO NOTHING;
