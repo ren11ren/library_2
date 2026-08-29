@@ -165,37 +165,7 @@ VALUES
   ('Computer Organization and Design', 'David Patterson', '9780128201091', 'Computer Architecture', 2, 2)
 ON CONFLICT (isbn) DO NOTHING;
 
--- Optional sample active borrow records for a realistic dashboard
--- These records will only work if matching test users already exist in profiles.
--- Replace the UUIDs below with real profile ids from your Supabase auth/users table.
-DO $$
-DECLARE
-  user_1 UUID := '11111111-1111-4111-8111-111111111111';
-  user_2 UUID := '22222222-2222-4222-8222-222222222222';
-  user_3 UUID := '33333333-3333-4333-8333-333333333333';
-  book_algo UUID;
-  book_clean UUID;
-  book_design UUID;
-BEGIN
-  SELECT id INTO book_algo FROM public.books WHERE isbn = '9780262033848';
-  SELECT id INTO book_clean FROM public.books WHERE isbn = '9780132350884';
-  SELECT id INTO book_design FROM public.books WHERE isbn = '9780201633610';
-
-  IF book_algo IS NOT NULL THEN
-    INSERT INTO public.borrow_records (user_id, book_id, borrow_date, due_date, return_date, status)
-    VALUES
-      (user_1, book_algo, NOW() - INTERVAL '14 days', NOW() - INTERVAL '1 day', NULL, 'overdue'),
-      (user_2, book_clean, NOW() - INTERVAL '8 days', NOW() + INTERVAL '6 days', NULL, 'borrowed')
-    ON CONFLICT DO NOTHING;
-  END IF;
-
-  IF book_design IS NOT NULL THEN
-    INSERT INTO public.borrow_records (user_id, book_id, borrow_date, due_date, return_date, status)
-    VALUES
-      (user_3, book_design, NOW() - INTERVAL '5 days', NOW() + INTERVAL '9 days', NULL, 'borrowed')
-    ON CONFLICT DO NOTHING;
-  END IF;
-END $$;
+-- Sample borrowing inserts moved below so tables exist before insertion.
 
 -- Additional tables to hold migrated mock data (keeps profiles/auth separate)
 CREATE TABLE IF NOT EXISTS public.students (
@@ -284,17 +254,16 @@ VALUES
   ('22222222-aaaa-0000-0000-000000000005','LC-0104','11111111-1111-1111-1111-555555555555','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
--- Insert borrowing records
 INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
 VALUES
-  ('33333333-aaaa-0000-000000000001','TXN-2025-001','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000001','2025-07-25','2025-08-08',NULL,'overdue',true,NULL,'2025-07-25T00:00:00Z'),
-  ('33333333-aaaa-0000-000000000002','TXN-2025-002','11111111-1111-1111-1111-222222222222','11111111-aaaa-0000-0000-000000000003','2025-08-01','2025-08-15',NULL,'due-soon',false,NULL,'2025-08-01T00:00:00Z'),
-  ('33333333-aaaa-0000-000000000003','TXN-2025-003','11111111-1111-1111-1111-444444444444','11111111-aaaa-0000-0000-000000000004','2025-08-05','2025-08-19',NULL,'active',false,NULL,'2025-08-05T00:00:00Z'),
-  ('33333333-aaaa-0000-000000000004','TXN-2025-004','11111111-1111-1111-1111-555555555555','11111111-aaaa-0000-0000-000000000006','2025-08-03','2025-08-17',NULL,'active',false,NULL,'2025-08-03T00:00:00Z'),
-  ('33333333-aaaa-0000-0000-000000000005','TXN-2025-005','11111111-1111-1111-1111-333333333333','11111111-aaaa-0000-0000-000000000002','2025-07-10','2025-07-24',NULL,'overdue',false,NULL,'2025-07-10T00:00:00Z'),
-  ('33333333-aaaa-0000-000000000006','TXN-2025-006','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000008','2025-06-01','2025-06-15','2025-06-15','returned',false,'Good','2025-06-01T00:00:00Z'),
-  ('33333333-aaaa-0000-000000000007','TXN-2025-007','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000005','2025-05-10','2025-05-22','2025-05-22','returned',false,'Good','2025-05-10T00:00:00Z')
-ON CONFLICT (id) DO NOTHING;
+  (gen_random_uuid(),'TXN-2025-001','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000001','2025-07-25','2025-08-08',NULL,'overdue',true,NULL,'2025-07-25T00:00:00Z'),
+  (gen_random_uuid(),'TXN-2025-002','11111111-1111-1111-1111-222222222222','11111111-aaaa-0000-0000-000000000003','2025-08-01','2025-08-15',NULL,'due-soon',false,NULL,'2025-08-01T00:00:00Z'),
+  (gen_random_uuid(),'TXN-2025-003','11111111-1111-1111-1111-444444444444','11111111-aaaa-0000-0000-000000000004','2025-08-05','2025-08-19',NULL,'active',false,NULL,'2025-08-05T00:00:00Z'),
+  (gen_random_uuid(),'TXN-2025-004','11111111-1111-1111-1111-555555555555','11111111-aaaa-0000-0000-000000000006','2025-08-03','2025-08-17',NULL,'active',false,NULL,'2025-08-03T00:00:00Z'),
+  (gen_random_uuid(),'TXN-2025-005','11111111-1111-1111-1111-333333333333','11111111-aaaa-0000-0000-000000000002','2025-07-10','2025-07-24',NULL,'overdue',false,NULL,'2025-07-10T00:00:00Z'),
+  (gen_random_uuid(),'TXN-2025-006','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000008','2025-06-01','2025-06-15','2025-06-15','returned',false,'Good','2025-06-01T00:00:00Z'),
+  (gen_random_uuid(),'TXN-2025-007','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000005','2025-05-10','2025-05-22','2025-05-22','returned',false,'Good','2025-05-10T00:00:00Z')
+ON CONFLICT (txn_code) DO NOTHING;
 
 -- Insert app users
 INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
@@ -308,3 +277,33 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.settings (id, library_name, borrow_period_days, max_books_per_student, fine_per_day, admin_email)
 VALUES (1,'Greenfield College Library',14,3,5.0,'librarian@greenfield.edu')
 ON CONFLICT (id) DO NOTHING;
+
+-- Optional sample active borrow records for a realistic dashboard (insert after tables exist)
+DO $$
+DECLARE
+  student_1 UUID := '11111111-1111-1111-1111-111111111111';
+  student_2 UUID := '11111111-1111-1111-1111-222222222222';
+  student_3 UUID := '11111111-1111-1111-1111-333333333333';
+  book_algo UUID;
+  book_clean UUID;
+  book_design UUID;
+BEGIN
+  SELECT id INTO book_algo FROM public.books WHERE isbn = '9780262033848';
+  SELECT id INTO book_clean FROM public.books WHERE isbn = '9780132350884';
+  SELECT id INTO book_design FROM public.books WHERE isbn = '9780201633610';
+
+  IF book_algo IS NOT NULL THEN
+    INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
+    VALUES
+      (gen_random_uuid(), 'TXN-2025-001', student_1, book_algo, '2025-07-25', '2025-08-08', NULL, 'overdue', true, NULL, '2025-07-25T00:00:00Z'),
+      (gen_random_uuid(), 'TXN-2025-002', student_2, book_clean, '2025-08-01', '2025-08-15', NULL, 'due-soon', false, NULL, '2025-08-01T00:00:00Z')
+    ON CONFLICT (txn_code) DO NOTHING;
+  END IF;
+
+  IF book_design IS NOT NULL THEN
+    INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
+    VALUES
+      (gen_random_uuid(), 'TXN-2025-003', student_3, book_design, '2025-08-05', '2025-08-19', NULL, 'active', false, NULL, '2025-08-05T00:00:00Z')
+    ON CONFLICT (txn_code) DO NOTHING;
+  END IF;
+END $$;

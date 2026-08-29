@@ -2554,7 +2554,7 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Available Books</div>
             <div className="mt-2 text-2xl font-bold text-green-700">{availableBooks}</div>
-            <div className="text-xs text-gray-400 mt-1">{Math.round((availableBooks / Math.max(totalBooks,1)) * 100)}% available</div>
+            <div className="text-xs text-gray-400 mt-1">{Math.round((availableBooks / Math.max(totalBooks, 1)) * 100)}% available</div>
           </div>
         </div>
         <div className="col-span-2 md:col-span-1 lg:col-span-1">
@@ -2596,14 +2596,14 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
             </div>
 
             <div className="grid grid-cols-6 gap-3 items-end h-36">
-              {monthlyBorrowings.map((v, i) => {
+              {monthlyBorrowings.map((v: number, i: number) => {
                 const height = Math.round((v / maxMonth) * 100)
                 return (
                   <div key={i} className="flex flex-col items-center gap-2">
                     <div className="w-full flex items-end">
                       <div className="w-full rounded-t-md bg-green-600" style={{ height: `${height}%` }} />
                     </div>
-                    <div className="text-xs text-gray-500">{['Mar','Apr','May','Jun','Jul','Aug'][i]}</div>
+                    <div className="text-xs text-gray-500">{['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'][i]}</div>
                   </div>
                 )
               })}
@@ -2615,8 +2615,8 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
               <h3 className="text-base font-semibold text-green-900">Recent Borrowing Records</h3>
               <button className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
             </div>
-            <Table headers={["Student","Book","Due Date","Status"]}>
-              {recent.slice(0,6).map((r: any, idx: number) => (
+            <Table headers={["Student", "Book", "Due Date", "Status"]}>
+              {recent.slice(0, 6).map((r: any, idx: number) => (
                 <Tr key={r.txn ?? idx}>
                   <Td className="font-medium">{r.student}</Td>
                   <Td className="text-gray-500 text-xs">{r.book}</Td>
