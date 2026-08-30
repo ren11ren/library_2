@@ -1,6 +1,3 @@
--- Library Management System schema for Supabase
--- Run this script in the Supabase SQL Editor.
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -102,72 +99,6 @@ AFTER UPDATE OF return_date ON public.borrow_records
 FOR EACH ROW
 EXECUTE FUNCTION public.increment_book_copies_on_return();
 
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.borrow_records ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Books are viewable by everyone" ON public.books;
-CREATE POLICY "Books are viewable by everyone"
-ON public.books
-FOR SELECT
-USING (true);
-
-DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-CREATE POLICY "Users can view own profile"
-ON public.profiles
-FOR SELECT
-USING (auth.uid() = id);
-
-DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
-CREATE POLICY "Users can insert own profile"
-ON public.profiles
-FOR INSERT
-WITH CHECK (auth.uid() = id);
-
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile"
-ON public.profiles
-FOR UPDATE
-USING (auth.uid() = id)
-WITH CHECK (auth.uid() = id);
-
-DROP POLICY IF EXISTS "Users can read own borrow records" ON public.borrow_records;
-CREATE POLICY "Users can read own borrow records"
-ON public.borrow_records
-FOR SELECT
-USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can insert own borrow records" ON public.borrow_records;
-CREATE POLICY "Users can insert own borrow records"
-ON public.borrow_records
-FOR INSERT
-WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can update own borrow records" ON public.borrow_records;
-CREATE POLICY "Users can update own borrow records"
-ON public.borrow_records
-FOR UPDATE
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
-
--- Realistic library dataset for the dashboard UI
-INSERT INTO public.books (title, author, isbn, category, total_copies, available_copies)
-VALUES
-  ('Introduction to Algorithms', 'Thomas H. Cormen', '9780262033848', 'Computer Science', 3, 2),
-  ('The Art of Computer Programming', 'Donald E. Knuth', '9780201896831', 'Computer Science', 2, 0),
-  ('Clean Code', 'Robert C. Martin', '9780132350884', 'Technology', 4, 3),
-  ('Design Patterns', 'Erich Gamma', '9780201633610', 'Technology', 2, 1),
-  ('Structure and Interpretation of Computer Programs', 'Harold Abelson', '9780262510875', 'Computer Science', 1, 1),
-  ('Database System Concepts', 'Abraham Silberschatz', '9780073523323', 'Database', 5, 4),
-  ('Operating System Concepts', 'Abraham Silberschatz', '9781118063330', 'Operating Systems', 3, 1),
-  ('Discrete Mathematics', 'Kenneth Rosen', '9780073383095', 'Mathematics', 4, 2),
-  ('Software Engineering', 'Ian Sommerville', '9781292096131', 'Software Engineering', 3, 2),
-  ('Computer Organization and Design', 'David Patterson', '9780128201091', 'Computer Architecture', 2, 2)
-ON CONFLICT (isbn) DO NOTHING;
-
--- Sample borrowing inserts moved below so tables exist before insertion.
-
--- Additional tables to hold migrated mock data (keeps profiles/auth separate)
 CREATE TABLE IF NOT EXISTS public.students (
   id UUID PRIMARY KEY,
   student_code TEXT UNIQUE,
@@ -221,17 +152,173 @@ CREATE TABLE IF NOT EXISTS public.settings (
   admin_email TEXT
 );
 
--- Insert mock students
-INSERT INTO public.students (id, student_code, name, email, course, year_level, status, created_at)
-VALUES
-  ('11111111-1111-1111-1111-111111111111','STU-2021-001','Maria Santos','maria.santos@college.edu','BS Computer Science','4th Year','active','2025-01-01T00:00:00Z'),
-  ('11111111-1111-1111-1111-222222222222','STU-2021-002','Juan dela Cruz','juan.delacruz@college.edu','BSIT','4th Year','active','2025-01-02T00:00:00Z'),
-  ('11111111-1111-1111-1111-333333333333','STU-2022-015','Ana Reyes','ana.reyes@college.edu','BSCS','3rd Year','suspended','2026-01-01T00:00:00Z'),
-  ('11111111-1111-1111-1111-444444444444','STU-2023-008','Carlo Bautista','carlo.bautista@college.edu','BSECE','2nd Year','active','2025-06-01T00:00:00Z'),
-  ('11111111-1111-1111-1111-555555555555','STU-2023-019','Lena Villanueva','lena.villanueva@college.edu','BSME','2nd Year','active','2025-07-01T00:00:00Z')
-ON CONFLICT (id) DO NOTHING;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.borrow_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.library_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.borrowing_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
 
--- Insert mock books (map book_code into isbn field to avoid schema change)
+DROP POLICY IF EXISTS "Books are viewable by everyone" ON public.books;
+CREATE POLICY "Books are viewable by everyone"
+ON public.books
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Books are writable by everyone" ON public.books;
+CREATE POLICY "Books are writable by everyone"
+ON public.books
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Books are updatable by everyone" ON public.books;
+CREATE POLICY "Books are updatable by everyone"
+ON public.books
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Books are deletable by everyone" ON public.books;
+CREATE POLICY "Books are deletable by everyone"
+ON public.books
+FOR DELETE
+USING (true);
+
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile"
+ON public.profiles
+FOR SELECT
+USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile"
+ON public.profiles
+FOR INSERT
+WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile"
+ON public.profiles
+FOR UPDATE
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can read own borrow records" ON public.borrow_records;
+CREATE POLICY "Users can read own borrow records"
+ON public.borrow_records
+FOR SELECT
+USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own borrow records" ON public.borrow_records;
+CREATE POLICY "Users can insert own borrow records"
+ON public.borrow_records
+FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own borrow records" ON public.borrow_records;
+CREATE POLICY "Users can update own borrow records"
+ON public.borrow_records
+FOR UPDATE
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Students are viewable by everyone" ON public.students;
+CREATE POLICY "Students are viewable by everyone"
+ON public.students
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Students are writable by everyone" ON public.students;
+CREATE POLICY "Students are writable by everyone"
+ON public.students
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Students are updatable by everyone" ON public.students;
+CREATE POLICY "Students are updatable by everyone"
+ON public.students
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Library cards are viewable by everyone" ON public.library_cards;
+CREATE POLICY "Library cards are viewable by everyone"
+ON public.library_cards
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Library cards are writable by everyone" ON public.library_cards;
+CREATE POLICY "Library cards are writable by everyone"
+ON public.library_cards
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Library cards are updatable by everyone" ON public.library_cards;
+CREATE POLICY "Library cards are updatable by everyone"
+ON public.library_cards
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Borrowing records are viewable by everyone" ON public.borrowing_records;
+CREATE POLICY "Borrowing records are viewable by everyone"
+ON public.borrowing_records
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Borrowing records are writable by everyone" ON public.borrowing_records;
+CREATE POLICY "Borrowing records are writable by everyone"
+ON public.borrowing_records
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Borrowing records are updatable by everyone" ON public.borrowing_records;
+CREATE POLICY "Borrowing records are updatable by everyone"
+ON public.borrowing_records
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "App users are viewable by everyone" ON public.app_users;
+CREATE POLICY "App users are viewable by everyone"
+ON public.app_users
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "App users are writable by everyone" ON public.app_users;
+CREATE POLICY "App users are writable by everyone"
+ON public.app_users
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "App users are updatable by everyone" ON public.app_users;
+CREATE POLICY "App users are updatable by everyone"
+ON public.app_users
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Settings are viewable by everyone" ON public.settings;
+CREATE POLICY "Settings are viewable by everyone"
+ON public.settings
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Settings are writable by everyone" ON public.settings;
+CREATE POLICY "Settings are writable by everyone"
+ON public.settings
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Settings are updatable by everyone" ON public.settings;
+CREATE POLICY "Settings are updatable by everyone"
+ON public.settings
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
 INSERT INTO public.books (id, title, author, isbn, category, total_copies, available_copies, created_at)
 VALUES
   ('11111111-aaaa-0000-0000-000000000001','Introduction to Algorithms','Cormen, Leiserson, Rivest','BK-001','Computer Science',3,2,'2025-01-01T00:00:00Z'),
@@ -244,7 +331,21 @@ VALUES
   ('11111111-aaaa-0000-0000-000000000008','Operating System Concepts','Silberschatz et al.','BK-008','Computer Science',2,2,'2025-08-01T00:00:00Z')
 ON CONFLICT (id) DO NOTHING;
 
--- Insert library cards
+INSERT INTO public.students (id, student_code, name, email, course, year_level, status, created_at)
+VALUES
+  ('11111111-1111-1111-1111-111111111111','STU-2021-001','Maria Santos','maria.santos@college.edu','BS Computer Science','4th Year','active','2025-01-01T00:00:00Z'),
+  ('11111111-1111-1111-1111-222222222222','STU-2021-002','Juan dela Cruz','juan.delacruz@college.edu','BSIT','4th Year','active','2025-01-02T00:00:00Z'),
+  ('11111111-1111-1111-1111-333333333333','STU-2022-015','Ana Reyes','ana.reyes@college.edu','BSCS','3rd Year','suspended','2026-01-01T00:00:00Z'),
+  ('11111111-1111-1111-1111-444444444444','STU-2023-008','Carlo Bautista','carlo.bautista@college.edu','BSECE','2nd Year','active','2025-06-01T00:00:00Z'),
+  ('11111111-1111-1111-1111-555555555555','STU-2023-019','Lena Villanueva','lena.villanueva@college.edu','BSME','2nd Year','active','2025-07-01T00:00:00Z')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
+VALUES
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','maria.santos@college.edu','user123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','juan.delacruz@college.edu','user123','student','11111111-1111-1111-1111-222222222222','2025-01-02T00:00:00Z')
+ON CONFLICT (email) DO NOTHING;
+
 INSERT INTO public.library_cards (id, card_no, student_id, issue_date, expiry_date, status, created_at)
 VALUES
   ('22222222-aaaa-0000-0000-000000000001','LC-0042','11111111-1111-1111-1111-111111111111','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
@@ -257,53 +358,10 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
 VALUES
   (gen_random_uuid(),'TXN-2025-001','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000001','2025-07-25','2025-08-08',NULL,'overdue',true,NULL,'2025-07-25T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-002','11111111-1111-1111-1111-222222222222','11111111-aaaa-0000-0000-000000000003','2025-08-01','2025-08-15',NULL,'due-soon',false,NULL,'2025-08-01T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-003','11111111-1111-1111-1111-444444444444','11111111-aaaa-0000-0000-000000000004','2025-08-05','2025-08-19',NULL,'active',false,NULL,'2025-08-05T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-004','11111111-1111-1111-1111-555555555555','11111111-aaaa-0000-0000-000000000006','2025-08-03','2025-08-17',NULL,'active',false,NULL,'2025-08-03T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-005','11111111-1111-1111-1111-333333333333','11111111-aaaa-0000-0000-000000000002','2025-07-10','2025-07-24',NULL,'overdue',false,NULL,'2025-07-10T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-006','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000008','2025-06-01','2025-06-15','2025-06-15','returned',false,'Good','2025-06-01T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-007','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000005','2025-05-10','2025-05-22','2025-05-22','returned',false,'Good','2025-05-10T00:00:00Z')
+  (gen_random_uuid(),'TXN-2025-002','11111111-1111-1111-1111-222222222222','11111111-aaaa-0000-0000-000000000003','2025-08-01','2025-08-15',NULL,'due-soon',false,NULL,'2025-08-01T00:00:00Z')
 ON CONFLICT (txn_code) DO NOTHING;
 
--- Insert app users
-INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
-VALUES
-  ('22222222-2222-2222-2222-222222222222','maria.santos@college.edu','password123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
-  ('22222222-2222-2222-2222-333333333333','2021-001','password123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
-  ('33333333-3333-3333-3333-333333333333','librarian@college.edu','admin123','admin',NULL,'2025-01-01T00:00:00Z')
-ON CONFLICT (id) DO NOTHING;
-
--- Insert settings
 INSERT INTO public.settings (id, library_name, borrow_period_days, max_books_per_student, fine_per_day, admin_email)
-VALUES (1,'Greenfield College Library',14,3,5.0,'librarian@greenfield.edu')
+VALUES
+  (1, 'Greenfield College Library', 14, 3, 5.0, 'librarian@college.edu')
 ON CONFLICT (id) DO NOTHING;
-
--- Optional sample active borrow records for a realistic dashboard (insert after tables exist)
-DO $$
-DECLARE
-  student_1 UUID := '11111111-1111-1111-1111-111111111111';
-  student_2 UUID := '11111111-1111-1111-1111-222222222222';
-  student_3 UUID := '11111111-1111-1111-1111-333333333333';
-  book_algo UUID;
-  book_clean UUID;
-  book_design UUID;
-BEGIN
-  SELECT id INTO book_algo FROM public.books WHERE isbn = '9780262033848';
-  SELECT id INTO book_clean FROM public.books WHERE isbn = '9780132350884';
-  SELECT id INTO book_design FROM public.books WHERE isbn = '9780201633610';
-
-  IF book_algo IS NOT NULL THEN
-    INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
-    VALUES
-      (gen_random_uuid(), 'TXN-2025-001', student_1, book_algo, '2025-07-25', '2025-08-08', NULL, 'overdue', true, NULL, '2025-07-25T00:00:00Z'),
-      (gen_random_uuid(), 'TXN-2025-002', student_2, book_clean, '2025-08-01', '2025-08-15', NULL, 'due-soon', false, NULL, '2025-08-01T00:00:00Z')
-    ON CONFLICT (txn_code) DO NOTHING;
-  END IF;
-
-  IF book_design IS NOT NULL THEN
-    INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
-    VALUES
-      (gen_random_uuid(), 'TXN-2025-003', student_3, book_design, '2025-08-05', '2025-08-19', NULL, 'active', false, NULL, '2025-08-05T00:00:00Z')
-    ON CONFLICT (txn_code) DO NOTHING;
-  END IF;
-END $$;

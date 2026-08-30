@@ -205,6 +205,32 @@ const libraryClassificationCategories = [
   'Z - Bibliography and Library Science',
 ]
 
+const PERSISTED_BOOKS_KEY = 'library-books-v1'
+const PERSISTED_STUDENTS_KEY = 'library-students-v1'
+
+function readPersistedState<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as T
+    return parsed ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+function savePersistedState<T>(key: string, value: T) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // ignore write failures from restricted browsers or storage full errors
+  }
+}
+
 const borrowedBooks = [
   { id: 1, title: 'Introduction to Algorithms', author: 'Cormen et al.', borrowDate: 'Jul 25, 2025', dueDate: 'Aug 8, 2025', status: 'overdue' },
   { id: 2, title: 'Clean Code', author: 'Robert C. Martin', borrowDate: 'Aug 1, 2025', dueDate: 'Aug 15, 2025', status: 'due-soon' },
@@ -1233,7 +1259,11 @@ function Profile() {
 // ─── Admin Views ───────────────────────────────────────────────────────────────
 
 function AdminBooks() {
-  const [books, setBooks] = useState(adminBooks)
+  const [books, setBooks] = useState(() => readPersistedState(PERSISTED_BOOKS_KEY, adminBooks))
+  useEffect(() => {
+    savePersistedState(PERSISTED_BOOKS_KEY, books)
+  }, [books])
+
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('All')
   const [showForm, setShowForm] = useState(false)
@@ -1657,7 +1687,11 @@ function AdminBooks() {
 }
 
 function AdminStudents() {
-  const [students, setStudents] = useState(adminStudents)
+  const [students, setStudents] = useState(() => readPersistedState(PERSISTED_STUDENTS_KEY, adminStudents))
+  useEffect(() => {
+    savePersistedState(PERSISTED_STUDENTS_KEY, students)
+  }, [students])
+
   const [query, setQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)

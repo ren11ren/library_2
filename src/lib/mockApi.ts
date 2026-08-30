@@ -1,5 +1,6 @@
 // Note: mock data has been migrated to the Supabase schema.sql.
-// This module no longer bundles the large mock JSON; it falls back to empty data.
+// This module keeps a working local database state in browser storage so
+// entries survive refreshes instead of resetting to an empty library.
 import type {
     AuthSession,
     Book,
@@ -10,9 +11,33 @@ import type {
     Student,
     UserRole,
 } from './database.types'
+import { supabase } from '../supabaseClient'
 
-// Load mock data from localStorage if available, otherwise use bundled defaults
 const STORAGE_KEY = 'lms_mock_data_v1'
+
+const defaultLibraryState = {
+    books: [
+        { id: 'BK-001', book_code: 'BK-001', title: 'Introduction to Algorithms', author: 'Cormen, Leiserson, Rivest', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 3, available: 2 },
+        { id: 'BK-002', book_code: 'BK-002', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 2, available: 0 },
+        { id: 'BK-003', book_code: 'BK-003', title: 'Clean Code', author: 'Robert C. Martin', category: 'T - Technology and Engineering', copies: 4, available: 3 },
+        { id: 'BK-004', book_code: 'BK-004', title: 'Design Patterns', author: 'Gang of Four', category: 'T - Technology and Engineering', copies: 2, available: 1 },
+    ] as Book[],
+    students: [
+        { id: 'STU-2021-001', student_code: 'STU-2021-001', name: 'Maria Santos', email: 'maria.santos@college.edu', course: 'BSCS', status: 'active' },
+        { id: 'STU-2021-002', student_code: 'STU-2021-002', name: 'Juan dela Cruz', email: 'juan.delacruz@college.edu', course: 'BSIT', status: 'active' },
+    ] as Student[],
+    app_users: [
+        { id: crypto.randomUUID(), email: 'maria.santos@college.edu', password: 'user123', role: 'student', student_id: 'STU-2021-001' },
+        { id: crypto.randomUUID(), email: 'juan.delacruz@college.edu', password: 'user123', role: 'student', student_id: 'STU-2021-002' },
+    ],
+    library_cards: [
+        { id: crypto.randomUUID(), card_no: 'LC-0042', student_id: 'STU-2021-001', issue_date: '2025-08-01', expiry_date: '2026-08-01', status: 'active' },
+        { id: crypto.randomUUID(), card_no: 'LC-0043', student_id: 'STU-2021-002', issue_date: '2025-08-01', expiry_date: '2026-08-01', status: 'active' },
+    ],
+    borrowing_records: [],
+    settings: { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' }
+}
+
 function loadMockData() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY)
@@ -20,15 +45,8 @@ function loadMockData() {
     } catch (e) {
         // ignore
     }
-    // Return empty default shapes when no persisted local data exists.
-    return {
-        books: [],
-        students: [],
-        app_users: [],
-        library_cards: [],
-        borrowing_records: [],
-        settings: { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' }
-    }
+    saveMockData(defaultLibraryState)
+    return defaultLibraryState
 }
 
 function saveMockData(data: any) {
@@ -96,8 +114,65 @@ export async function login(emailOrId: string, password: string, role: UserRole)
     return { user: candidate, student, card }
 }
 
-export async function fetchBooks() { return BOOKS }
-export async function fetchStudents() { return STUDENTS }
+const isUuid = (value?: string | null) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+
+function mapBookRow(row: any): Book {
+    return {
+        ...row,
+        id: row.id ?? row.isbn ?? row.book_code ?? crypto.randomUUID(),
+        book_code: row.book_code ?? row.isbn ?? row.id ?? crypto.randomUUID(),
+        title: row.title,
+        author: row.author,
+        category: row.category,
+        copies: Number(row.total_copies ?? row.copies ?? 1),
+        available: Number(row.available_copies ?? row.available ?? Number(row.total_copies ?? row.copies ?? 1)),
+        isbn: row.isbn ?? row.book_code ?? row.id ?? '',
+        total_copies: Number(row.total_copies ?? row.copies ?? 1),
+        available_copies: Number(row.available_copies ?? row.available ?? Number(row.total_copies ?? row.copies ?? 1)),
+    } as Book
+}
+
+function mapStudentRow(row: any): Student {
+    return {
+        ...row,
+        id: row.id ?? row.student_code ?? crypto.randomUUID(),
+        student_code: row.student_code ?? row.id ?? crypto.randomUUID(),
+        name: row.name,
+        email: row.email,
+        course: row.course,
+        year_level: row.year_level ?? null,
+        status: row.status ?? 'active',
+    } as Student
+}
+
+export async function fetchBooks() {
+    try {
+        const { data, error } = await supabase.from('books').select('*').order('created_at', { ascending: false })
+        if (!error && data) {
+            const mapped = data.map(mapBookRow)
+            saveMockData({ books: mapped, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+            return mapped
+        }
+    } catch {
+        // fallback to local storage-backed mock data
+    }
+    return BOOKS
+}
+
+export async function fetchStudents() {
+    try {
+        const { data, error } = await supabase.from('students').select('*').order('created_at', { ascending: false })
+        if (!error && data) {
+            const mapped = data.map(mapStudentRow)
+            saveMockData({ books: BOOKS, students: mapped, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+            return mapped
+        }
+    } catch {
+        // fallback to local storage-backed mock data
+    }
+    return STUDENTS
+}
+
 export async function fetchLibraryCards() { return CARDS }
 export async function fetchSettings() { return { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' } as Settings }
 export async function fetchAllBorrowingRecords() { return [] as BorrowingRecordWithDetails[] }
@@ -106,16 +181,75 @@ export async function fetchActiveBorrowingRecords() { return [] as BorrowingReco
 export async function fetchReturnedRecords() { return [] as BorrowingRecordWithDetails[] }
 
 export async function upsertBook(book: Partial<Book> & Pick<Book, 'book_code' | 'title' | 'author' | 'category'>) {
-    const existing = BOOKS.find((b) => b.book_code === book.book_code)
-    if (existing) Object.assign(existing, book)
-    else BOOKS.push({ ...(book as any), id: book.book_code })
+    const isbn = String((book as any).isbn ?? book.book_code ?? '').trim() || `978-${Date.now()}`
+    const payload = {
+        id: isUuid((book as any).id) ? (book as any).id : undefined,
+        title: String(book.title).trim(),
+        author: String(book.author).trim(),
+        isbn,
+        category: String(book.category).trim(),
+        total_copies: Number((book as any).copies ?? (book as any).total_copies ?? 1),
+        available_copies: Number((book as any).available ?? (book as any).available_copies ?? Number((book as any).copies ?? (book as any).total_copies ?? 1)),
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('books')
+            .upsert(payload, { onConflict: 'isbn' })
+            .select()
+            .maybeSingle()
+
+        if (!error && data) {
+            const saved = mapBookRow(data)
+            const existingIndex = BOOKS.findIndex((b) => b.book_code === saved.book_code || b.id === saved.id || b.isbn === saved.isbn)
+            if (existingIndex >= 0) BOOKS.splice(existingIndex, 1, saved)
+            else BOOKS.push(saved)
+            saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+            return saved
+        }
+    } catch {
+        // fallback to local storage
+    }
+
+    const existing = BOOKS.find((b) => b.book_code === book.book_code || b.isbn === isbn)
+    if (existing) Object.assign(existing, { ...existing, ...book, isbn, id: existing.id, book_code: book.book_code ?? existing.book_code ?? isbn, copies: Number((book as any).copies ?? existing.copies ?? 1), available: Number((book as any).available ?? existing.available ?? Number((book as any).copies ?? existing.copies ?? 1)) })
+    else BOOKS.push({ ...(book as any), id: book.book_code ?? isbn, book_code: book.book_code ?? isbn, isbn, copies: Number((book as any).copies ?? 1), available: Number((book as any).available ?? Number((book as any).copies ?? 1)) } as any)
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
-    return BOOKS.find((b) => b.book_code === book.book_code) as Book
+    return BOOKS.find((b) => b.book_code === (book.book_code ?? isbn) || b.isbn === isbn) as Book
 }
 
 export async function deleteBook(id: string) { const idx = BOOKS.findIndex((b) => b.id === id); if (idx >= 0) BOOKS.splice(idx, 1) }
 export async function upsertStudent(student: Partial<Student> & Pick<Student, 'student_code' | 'name' | 'email' | 'course'>) {
-    const existing = STUDENTS.find((s) => s.student_code === student.student_code)
+    const payload = {
+        id: isUuid((student as any).id) ? (student as any).id : undefined,
+        student_code: student.student_code,
+        name: student.name,
+        email: student.email,
+        course: student.course,
+        year_level: (student as any).year_level ?? null,
+        status: (student as any).status ?? 'active',
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('students')
+            .upsert(payload, { onConflict: 'student_code' })
+            .select()
+            .maybeSingle()
+
+        if (!error && data) {
+            const saved = mapStudentRow(data)
+            const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
+            if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, saved)
+            else STUDENTS.push(saved)
+            saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+            return saved
+        }
+    } catch {
+        // fallback to local storage
+    }
+
+    const existing = STUDENTS.find((s) => s.student_code === student.student_code || s.email === student.email)
     if (existing) Object.assign(existing, student)
     else STUDENTS.push(student as Student)
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
