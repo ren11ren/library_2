@@ -29,6 +29,7 @@ const defaultLibraryState = {
     app_users: [
         { id: crypto.randomUUID(), email: 'maria.santos@college.edu', password: 'user123', role: 'student', student_id: 'STU-2021-001' },
         { id: crypto.randomUUID(), email: 'juan.delacruz@college.edu', password: 'user123', role: 'student', student_id: 'STU-2021-002' },
+        { id: crypto.randomUUID(), email: 'librarian@college.edu', password: 'admin123', role: 'admin', student_id: null },
     ],
     library_cards: [
         { id: crypto.randomUUID(), card_no: 'LC-0042', student_id: 'STU-2021-001', issue_date: '2025-08-01', expiry_date: '2026-08-01', status: 'active' },
@@ -38,10 +39,33 @@ const defaultLibraryState = {
     settings: { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' }
 }
 
+function ensureSeedUsers(data: any) {
+    const currentUsers = Array.isArray(data?.app_users) ? data.app_users : []
+    const merged = [...currentUsers]
+    const byEmail = new Map(merged.map((user) => [String(user.email ?? '').toLowerCase(), user]))
+
+    for (const user of defaultLibraryState.app_users) {
+        const key = String(user.email ?? '').toLowerCase()
+        if (!byEmail.has(key)) {
+            merged.push(user)
+            byEmail.set(key, user)
+        }
+    }
+
+    return { ...data, app_users: merged }
+}
+
 function loadMockData() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY)
-        if (raw) return JSON.parse(raw)
+        if (raw) {
+            const parsed = JSON.parse(raw)
+            const normalized = ensureSeedUsers(parsed)
+            if (JSON.stringify(normalized) !== raw) {
+                saveMockData(normalized)
+            }
+            return normalized
+        }
     } catch (e) {
         // ignore
     }
@@ -51,7 +75,7 @@ function loadMockData() {
 
 function saveMockData(data: any) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(ensureSeedUsers(data)))
     } catch (e) {
         // ignore
     }
@@ -231,13 +255,21 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
     }
 
     try {
+        console.debug('[supabase] upsertStudent payload', payload)
         const { data, error } = await supabase
             .from('students')
             .upsert(payload, { onConflict: 'student_code' })
             .select()
             .maybeSingle()
 
-        if (!error && data) {
+        console.debug('[supabase] upsertStudent response', { data, error })
+
+        if (error) {
+            console.error('[supabase] upsertStudent error', error)
+            throw error
+        }
+
+        if (data) {
             const saved = mapStudentRow(data)
             const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
             if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, saved)
@@ -245,8 +277,10 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
             saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
             return saved
         }
-    } catch {
-        // fallback to local storage
+    } catch (err) {
+        console.error('[mockApi] supabase upsertStudent failed, falling back to local', err)
+        // Surface the error to the caller so UI can react (remove optimistic entry)
+        throw err
     }
 
     const existing = STUDENTS.find((s) => s.student_code === student.student_code || s.email === student.email)
@@ -265,7 +299,25 @@ export async function upsertAppUser(user: { email: string; password?: string; ro
     return APP_USERS.find((u) => u.email === user.email)
 }
 
-export async function deleteStudent(id: string) { const i = STUDENTS.findIndex(s => s.id === id); if (i >= 0) { STUDENTS.splice(i, 1); saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS }) } }
+export async function deleteStudent(id: string) {
+    try {
+        console.debug('[supabase] deleteStudent', id)
+        const { data, error } = await supabase.from('students').delete().eq('id', id)
+        if (error) {
+            console.error('[supabase] deleteStudent error', error)
+            throw error
+        }
+        const i = STUDENTS.findIndex((s) => s.id === id)
+        if (i >= 0) {
+            STUDENTS.splice(i, 1)
+            saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+        }
+        return data
+    } catch (err) {
+        console.error('[mockApi] deleteStudent supabase failed', err)
+        throw err
+    }
+}
 
 export async function issueLibraryCard(studentId: string, cardNo: string, expiryDate: string) {
     const card = { id: crypto.randomUUID(), card_no: cardNo, student_id: studentId, issue_date: new Date().toISOString().slice(0, 10), expiry_date: expiryDate, status: 'active', created_at: new Date().toISOString() }

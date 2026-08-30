@@ -95,6 +95,17 @@ export async function borrowBook(bookId) {
         throw new Error(error.message)
     }
 
+    // decrement available copies on the book row (persist change to Supabase)
+    const { data: bookRow, error: bookErr } = await supabase.from('books').select('available_copies').eq('id', bookId).maybeSingle()
+    if (bookErr) {
+        throw new Error(bookErr.message)
+    }
+    if (bookRow) {
+        const next = Math.max(Number(bookRow.available_copies ?? 0) - 1, 0)
+        const { error: upErr } = await supabase.from('books').update({ available_copies: next }).eq('id', bookId)
+        if (upErr) throw new Error(upErr.message)
+    }
+
     return true
 }
 
@@ -109,7 +120,7 @@ export async function returnBook(recordId) {
         throw new Error('Please sign in first to return a book.')
     }
 
-    const { error } = await supabase
+    const { data: updatedRecord, error } = await supabase
         .from('borrow_records')
         .update({
             return_date: new Date().toISOString(),
@@ -117,9 +128,23 @@ export async function returnBook(recordId) {
         })
         .eq('id', recordId)
         .eq('user_id', userData.user.id)
+        .select()
+        .maybeSingle()
 
     if (error) {
         throw new Error(error.message)
+    }
+
+    // increment available copies for the returned book
+    const bookId = updatedRecord?.book_id
+    if (bookId) {
+        const { data: bookRow, error: bookErr } = await supabase.from('books').select('available_copies').eq('id', bookId).maybeSingle()
+        if (bookErr) throw new Error(bookErr.message)
+        if (bookRow) {
+            const next = Number(bookRow.available_copies ?? 0) + 1
+            const { error: upErr } = await supabase.from('books').update({ available_copies: next }).eq('id', bookId)
+            if (upErr) throw new Error(upErr.message)
+        }
     }
 
     return true

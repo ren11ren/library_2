@@ -14,6 +14,7 @@ import {
   deleteStudent,
   markReminderSent,
 } from './lib/api'
+import useSupabaseRealtime from './hooks/useSupabaseRealtime'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Role = 'student' | 'admin'
@@ -752,8 +753,23 @@ function SearchBooks({ studentId }: { studentId?: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const { data: booksRt } = useSupabaseRealtime('books')
+
   const categories = libraryClassificationCategories
-  const filtered = searchResults.filter((b) => {
+
+  const localBooks = (booksRt && booksRt.length > 0)
+    ? (booksRt ?? []).map((r: any) => ({
+        id: r.id,
+        isbn: r.isbn ?? '',
+        title: r.title ?? '',
+        author: r.author ?? '',
+        category: r.category ?? '',
+        copies: Number(r.totalCopies ?? r.copies ?? 1),
+        available: Number(r.availableCopies ?? r.available ?? (r.totalCopies ?? r.copies ?? 1)),
+      }))
+    : searchResults
+
+  const filtered = localBooks.filter((b) => {
     const q = query.toLowerCase()
     const matchQ = !q || b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
     const matchC = category === 'All' || b.category === category
@@ -1259,10 +1275,36 @@ function Profile() {
 // ─── Admin Views ───────────────────────────────────────────────────────────────
 
 function AdminBooks() {
+  const { data: booksRt } = useSupabaseRealtime('books')
   const [books, setBooks] = useState(() => readPersistedState(PERSISTED_BOOKS_KEY, adminBooks))
+
   useEffect(() => {
-    savePersistedState(PERSISTED_BOOKS_KEY, books)
-  }, [books])
+    // Map realtime DB rows (camelCase) to the UI's expected shape
+    if (!booksRt) return
+    const mapped = (booksRt ?? []).map((r: any) => ({
+      id: r.id,
+      isbn: r.isbn ?? '',
+      title: r.title ?? '',
+      author: r.author ?? '',
+      publisher: r.publisher ?? '',
+      category: r.category ?? '',
+      copies: Number(r.totalCopies ?? r.copies ?? 1),
+      available: Number(r.availableCopies ?? r.available ?? (r.totalCopies ?? r.copies ?? 1)),
+      rack: r.rack ?? 'R1',
+      updatedOn: new Date().toISOString(),
+      cover_url: r.coverUrl ?? r.cover_url ?? null,
+    }))
+
+    // Merge realtime rows with any local-only entries to avoid dropping newly added items
+    setBooks((prev) => {
+      const byId = new Map<string, any>()
+      // add realtime rows first
+      for (const m of mapped) byId.set(m.id, m)
+      // preserve local entries that are not present in realtime payload
+      for (const p of prev) if (!byId.has(p.id)) byId.set(p.id, p)
+      return Array.from(byId.values())
+    })
+  }, [booksRt])
 
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('All')
@@ -1687,10 +1729,32 @@ function AdminBooks() {
 }
 
 function AdminStudents() {
+  const { data: studentsRt } = useSupabaseRealtime('students')
   const [students, setStudents] = useState(() => readPersistedState(PERSISTED_STUDENTS_KEY, adminStudents))
+
   useEffect(() => {
     savePersistedState(PERSISTED_STUDENTS_KEY, students)
   }, [students])
+
+  useEffect(() => {
+    if (!studentsRt) return
+    const mapped = (studentsRt ?? []).map((s: any) => ({
+      id: s.id,
+      name: s.name ?? '',
+      course: s.course ?? '',
+      card: s.card_no ?? s.cardNo ?? 'LC-NEW',
+      email: s.email ?? '',
+      status: s.status ?? 'active',
+    }))
+
+    // Merge realtime students with local list so newly created students aren't dropped
+    setStudents((prev) => {
+      const byId = new Map<string, any>()
+      for (const m of mapped) byId.set(m.id, m)
+      for (const p of prev) if (!byId.has(p.id)) byId.set(p.id, p)
+      return Array.from(byId.values())
+    })
+  }, [studentsRt])
 
   const [query, setQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -1749,43 +1813,64 @@ function AdminStudents() {
       return
     }
 
+    let tempId: string | null = null
     try {
-      setSaving(true)
-      setMessage(null)
-      const saved = await upsertStudent({
-        id: editingId ?? undefined,
-        student_code: trimmed.student_code,
-        name: trimmed.name,
-        email: trimmed.email,
-        course: trimmed.course,
-        status: trimmed.status,
-      } as any)
+        setSaving(true)
+        setMessage(null)
 
-      await upsertAppUser({
-        email: trimmed.email,
-        password: 'user123',
-        role: 'student',
-        student_id: saved.id,
-      })
-
-      setStudents((current) => {
-        const next = current.filter((s) => s.id !== (saved.id ?? editingId ?? s.id))
-        const item = {
-          id: saved.id ?? trimmed.student_code,
-          name: saved.name,
-          course: saved.course,
+        // optimistic create: add a temp entry so the UI doesn't lose the new student
+        tempId = `tmp-${Date.now()}`
+        const tempItem = {
+          id: tempId,
+          name: trimmed.name,
+          course: trimmed.course,
           card: trimmed.card || 'LC-NEW',
-          email: saved.email,
-          status: saved.status ?? trimmed.status,
+          email: trimmed.email,
+          status: trimmed.status,
         }
-        return [item, ...next]
-      })
+        console.debug('Creating optimistic student entry', tempItem)
+        setStudents((cur) => [tempItem, ...cur])
+
+        const saved = await upsertStudent({
+          id: editingId ?? undefined,
+          student_code: trimmed.student_code,
+          name: trimmed.name,
+          email: trimmed.email,
+          course: trimmed.course,
+          status: trimmed.status,
+        } as any)
+
+        console.debug('upsertStudent returned', saved)
+
+        await upsertAppUser({
+          email: trimmed.email,
+          password: 'user123',
+          role: 'student',
+          student_id: saved.id,
+        })
+
+        // replace optimistic entry with saved DB row, and remove duplicates
+        setStudents((current) => {
+          const filtered = current.filter((s) => s.id !== tempId && s.id !== saved.id)
+          const item = {
+            id: saved.id ?? trimmed.student_code,
+            name: saved.name,
+            course: saved.course,
+            card: trimmed.card || 'LC-NEW',
+            email: saved.email,
+            status: saved.status ?? trimmed.status,
+          }
+          return [item, ...filtered]
+        })
 
       setShowForm(false)
       setEditingId(null)
       setForm({ student_code: '', name: '', course: 'BSCS', card: '', email: '', status: 'active' as StudentStatus })
       setMessage('Student saved successfully.')
     } catch (err: any) {
+      console.error('Failed to save student', err)
+      // remove optimistic entry if present
+      if (tempId) setStudents((cur) => cur.filter((s) => s.id !== tempId))
       setMessage(err?.message || 'Unable to save the student.')
     } finally {
       setSaving(false)
