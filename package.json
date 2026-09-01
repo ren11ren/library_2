@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.x",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8443 --strictPort false",
     "build": "vite build",
