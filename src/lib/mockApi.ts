@@ -217,13 +217,20 @@ export async function upsertBook(book: Partial<Book> & Pick<Book, 'book_code' | 
     }
 
     try {
+        console.debug('[supabase] upsertBook payload', payload)
         const { data, error } = await supabase
             .from('books')
             .upsert(payload, { onConflict: 'isbn' })
             .select()
             .maybeSingle()
 
-        if (!error && data) {
+        console.debug('[supabase] upsertBook response', { data, error })
+        if (error) {
+            console.error('[supabase] upsertBook error', error)
+            throw error
+        }
+
+        if (data) {
             const saved = mapBookRow(data)
             const existingIndex = BOOKS.findIndex((b) => b.book_code === saved.book_code || b.id === saved.id || b.isbn === saved.isbn)
             if (existingIndex >= 0) BOOKS.splice(existingIndex, 1, saved)
@@ -242,10 +249,28 @@ export async function upsertBook(book: Partial<Book> & Pick<Book, 'book_code' | 
     return BOOKS.find((b) => b.book_code === (book.book_code ?? isbn) || b.isbn === isbn) as Book
 }
 
-export async function deleteBook(id: string) { const idx = BOOKS.findIndex((b) => b.id === id); if (idx >= 0) BOOKS.splice(idx, 1) }
+export async function deleteBook(id: string) {
+    try {
+        console.debug('[supabase] deleteBook', id)
+        const { data, error } = await supabase.from('books').delete().eq('id', id)
+        if (error) {
+            console.error('[supabase] deleteBook error', error)
+            throw error
+        }
+        const idx = BOOKS.findIndex((b) => b.id === id)
+        if (idx >= 0) {
+            BOOKS.splice(idx, 1)
+            saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+        }
+        return data
+    } catch (err) {
+        console.error('[mockApi] deleteBook supabase failed', err)
+        throw err
+    }
+}
 export async function upsertStudent(student: Partial<Student> & Pick<Student, 'student_code' | 'name' | 'email' | 'course'>) {
     const payload = {
-        id: isUuid((student as any).id) ? (student as any).id : undefined,
+        id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
         student_code: student.student_code,
         name: student.name,
         email: student.email,

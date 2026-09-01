@@ -7,54 +7,54 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || defaultSupabaseUrl
 const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || defaultSupabaseAnonKey
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  realtime: { params: { events: 'postgres_changes' } },
+    auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { params: { events: 'postgres_changes' } },
 })
 
 async function main() {
-  console.log('Subscribing to books changes...')
+    console.log('Subscribing to books changes...')
 
-  const channel = supabase
-    .channel('public:books')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'books' }, (payload) => {
-      console.log('Realtime event:', JSON.stringify(payload, null, 2))
-    })
-    .subscribe()
+    const channel = supabase
+        .channel('public:books')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'books' }, (payload) => {
+            console.log('Realtime event:', JSON.stringify(payload, null, 2))
+        })
+        .subscribe()
 
-  // wait for client to connect
-  await new Promise((res) => setTimeout(res, 1500))
+    // wait for client to connect
+    await new Promise((res) => setTimeout(res, 1500))
 
-  // pick a book with available_copies > 0
-  const { data: books } = await supabase.from('books').select('id, available_copies, title').limit(100)
-  if (!books || books.length === 0) {
-    console.error('No books found to update')
-    process.exit(2)
-  }
+    // pick a book with available_copies > 0
+    const { data: books } = await supabase.from('books').select('id, available_copies, title').limit(100)
+    if (!books || books.length === 0) {
+        console.error('No books found to update')
+        process.exit(2)
+    }
 
-  const book = books.find((b) => Number(b.available_copies ?? 0) > 0) ?? books[0]
-  console.log('Selected book for update:', book)
+    const book = books.find((b) => Number(b.available_copies ?? 0) > 0) ?? books[0]
+    console.log('Selected book for update:', book)
 
-  const newVal = Math.max(Number(book.available_copies ?? 0) - 1, 0)
-  console.log(`Updating book ${book.id} available_copies -> ${newVal}`)
+    const newVal = Math.max(Number(book.available_copies ?? 0) - 1, 0)
+    console.log(`Updating book ${book.id} available_copies -> ${newVal}`)
 
-  const { data, error } = await supabase.from('books').update({ available_copies: newVal }).eq('id', book.id).select().maybeSingle()
-  if (error) {
-    console.error('Update error:', error)
-    process.exit(3)
-  }
+    const { data, error } = await supabase.from('books').update({ available_copies: newVal }).eq('id', book.id).select().maybeSingle()
+    if (error) {
+        console.error('Update error:', error)
+        process.exit(3)
+    }
 
-  console.log('Update result:', data)
+    console.log('Update result:', data)
 
-  // wait to receive realtime event
-  await new Promise((res) => setTimeout(res, 2500))
+    // wait to receive realtime event
+    await new Promise((res) => setTimeout(res, 2500))
 
-  try {
-    await supabase.removeChannel(channel)
-  } catch (e) {
-    // ignore
-  }
+    try {
+        await supabase.removeChannel(channel)
+    } catch (e) {
+        // ignore
+    }
 
-  process.exit(0)
+    process.exit(0)
 }
 
 main().catch((err) => { console.error(err); process.exit(1) })

@@ -69,6 +69,8 @@ export interface Database {
         Row: {
           id: string
           book_code: string
+          isbn?: string
+          publisher?: string
           title: string
           author: string
           category: string
@@ -79,6 +81,8 @@ export interface Database {
         Insert: {
           id?: string
           book_code: string
+          isbn?: string
+          publisher?: string
           title: string
           author: string
           category: string
@@ -89,6 +93,8 @@ export interface Database {
         Update: {
           id?: string
           book_code?: string
+          isbn?: string
+          publisher?: string
           title?: string
           author?: string
           category?: string

@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import {
   login,
   fetchStudentBorrowingRecords,
@@ -15,6 +15,9 @@ import {
   markReminderSent,
 } from './lib/api'
 import useSupabaseRealtime from './hooks/useSupabaseRealtime'
+import mergeRecords from './lib/mergeRecords'
+import { startAuthSync } from './supabaseClient'
+import supabase from './supabaseClient'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Role = 'student' | 'admin'
@@ -29,7 +32,7 @@ type StudentView =
 type AdminView =
   | 'dashboard'
   | 'books'
-  | 'students'
+  | 'app-users'
   | 'library-cards'
   | 'borrower-cards'
   | 'borrowing-records'
@@ -317,17 +320,115 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
 }
 
 // ─── Login Page ────────────────────────────────────────────────────────────────
-function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password: string) => Promise<void> }) {
+function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email: string, password: string) => Promise<void>; onSignUpComplete?: (appUser: any, student: any) => void }) {
   const [role, setRole] = useState<Role>('student')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showSignup, setShowSignup] = useState(false)
+  const [name, setName] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [info, setInfo] = useState<string | null>(null)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-8">
+            {showSignup ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Full name</label>
+                  <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm password</label>
+                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+                </div>
+                {info && <div className="text-sm text-green-700">{info}</div>}
+                <div>
+                  <button
+                    onClick={async () => {
+                      setError(null)
+                      setInfo(null)
+                      if (!email || !password) return setError('Email and password are required')
+                      if (password !== confirm) return setError('Passwords do not match')
+                      setLoading(true)
+                      try {
+                        const res = await (supabase.auth as any).signUp({ email, password }, { data: { full_name: name } })
+                        if (res.error) {
+                          setError(res.error.message ?? JSON.stringify(res.error))
+                          return
+                        }
+
+                        const user = (res as any).data?.user ?? (res as any).user ?? null
+
+                        // Create profile rows (`students`, `app_users`). Collect any upsert errors.
+                        const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `id-${Date.now()}`
+                        const studentPayload = { id, student_code: `STU-${Date.now()}`, name: name || email.split('@')[0], email, course: 'Undeclared', status: 'active' }
+
+                        const upsertErrors: string[] = []
+                        const { data: sData, error: sErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'email' }).select().maybeSingle()
+                        if (sErr) upsertErrors.push(sErr.message ?? JSON.stringify(sErr))
+
+                        const appUser = { email, role: 'student', student_id: id }
+                        const { data: aData, error: aErr } = await supabase.from('app_users').upsert([appUser], { onConflict: 'email' }).select().maybeSingle()
+                        if (aErr) upsertErrors.push(aErr.message ?? JSON.stringify(aErr))
+
+                        if (upsertErrors.length > 0) {
+                          console.error('[signup] upsert errors', upsertErrors)
+                          setError(`Account created in Auth but profile creation failed: ${upsertErrors.join('; ')}`)
+                          if (!user) setInfo('Check your email to confirm your account before signing in.')
+                          return
+                        }
+
+                        // If we have created profile rows, call the optional onSignUpComplete callback
+                        if (onSignUpComplete && (aData || sData)) {
+                          try { onSignUpComplete(aData ?? null, sData ?? null) } catch (e) { console.debug('[signup] onSignUpComplete handler failed', e) }
+                        }
+
+                        if (!user) {
+                          setInfo('Account created. Check your email to confirm and then sign in.')
+                        } else {
+                          setInfo('Account created. You can sign in now.')
+                        }
+
+                        // Attempt to sign in and navigate into the app automatically.
+                        try {
+                          await onLogin('student', email, password)
+                        } catch (loginErr: any) {
+                          // If auto-login fails, show a non-blocking message and keep the user on sign-in screen.
+                          console.debug('[signup] auto-login failed', loginErr)
+                          setInfo((prev) => (prev ? prev + ' Auto sign-in failed.' : 'Auto sign-in failed.'))
+                        }
+
+                        setShowSignup(false)
+                      } catch (err: any) {
+                        setError(err?.message ?? 'Sign up failed')
+                      } finally {
+                        setLoading(false)
+                      }
+                    }}
+                    disabled={loading}
+                    className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors text-sm mt-1 disabled:opacity-60"
+                  >
+                    {loading ? 'Creating…' : 'Create account'}
+                  </button>
+                </div>
+                <div className="text-center text-sm">
+                  <button onClick={() => setShowSignup(false)} className="text-green-600 hover:text-green-800">Back to sign in</button>
+                </div>
+              </>
+            ) : (
+          <>
+          <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-8">
           {/* Logo */}
           <div className="flex flex-col items-center gap-3 mb-8">
             <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center text-white">
@@ -381,6 +482,9 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
               <button className="text-sm text-green-600 hover:text-green-800 font-medium transition-colors">
                 Forgot password?
               </button>
+              <div className="text-center mt-2">
+                <button onClick={() => { setShowSignup(true); setError(null); setInfo(null); }} className="text-sm text-green-600 hover:text-green-800">Create account</button>
+              </div>
             </div>
             <div>
               {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
@@ -404,9 +508,11 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
             </div>
           </div>
         </div>
-        <p className="text-center text-xs text-gray-400 mt-5">
-          © 2025 Greenfield College Library. All rights reserved.
-        </p>
+          <p className="text-center text-xs text-gray-400 mt-5">
+            © 2025 Greenfield College Library. All rights reserved.
+          </p>
+          </>
+          )}
       </div>
     </div>
   )
@@ -748,7 +854,7 @@ function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void
 function SearchBooks({ studentId }: { studentId?: string }) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
-  const [borrowModal, setBorrowModal] = useState<typeof searchResults[0] | null>(null)
+  const [borrowModal, setBorrowModal] = useState<any | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -759,14 +865,14 @@ function SearchBooks({ studentId }: { studentId?: string }) {
 
   const localBooks = (booksRt && booksRt.length > 0)
     ? (booksRt ?? []).map((r: any) => ({
-        id: r.id,
-        isbn: r.isbn ?? '',
-        title: r.title ?? '',
-        author: r.author ?? '',
-        category: r.category ?? '',
-        copies: Number(r.totalCopies ?? r.copies ?? 1),
-        available: Number(r.availableCopies ?? r.available ?? (r.totalCopies ?? r.copies ?? 1)),
-      }))
+      id: r.id,
+      isbn: r.isbn ?? '',
+      title: r.title ?? '',
+      author: r.author ?? '',
+      category: r.category ?? '',
+      copies: Number(r.totalCopies ?? r.copies ?? 1),
+      available: Number(r.availableCopies ?? r.available ?? (r.totalCopies ?? r.copies ?? 1)),
+    }))
     : searchResults
 
   const filtered = localBooks.filter((b) => {
@@ -1277,6 +1383,7 @@ function Profile() {
 function AdminBooks() {
   const { data: booksRt } = useSupabaseRealtime('books')
   const [books, setBooks] = useState(() => readPersistedState(PERSISTED_BOOKS_KEY, adminBooks))
+  const dbInitialized = useRef(false)
 
   useEffect(() => {
     // Map realtime DB rows (camelCase) to the UI's expected shape
@@ -1295,15 +1402,14 @@ function AdminBooks() {
       cover_url: r.coverUrl ?? r.cover_url ?? null,
     }))
 
-    // Merge realtime rows with any local-only entries to avoid dropping newly added items
-    setBooks((prev) => {
-      const byId = new Map<string, any>()
-      // add realtime rows first
-      for (const m of mapped) byId.set(m.id, m)
-      // preserve local entries that are not present in realtime payload
-      for (const p of prev) if (!byId.has(p.id)) byId.set(p.id, p)
-      return Array.from(byId.values())
-    })
+    // On first realtime load replace persisted/local list with DB rows to avoid showing stale/test data.
+    if (!dbInitialized.current) {
+      setBooks(mapped)
+      dbInitialized.current = true
+    } else {
+      // Merge realtime rows with any local-only entries to avoid dropping newly added items
+      setBooks((prev) => mergeRecords(prev, mapped))
+    }
   }, [booksRt])
 
   const [query, setQuery] = useState('')
@@ -1413,9 +1519,13 @@ function AdminBooks() {
       return
     }
 
+    let tempId: string | null = null
     try {
       setSaving(true)
       setMessage(null)
+
+      // optimistic create for books: add temp row so UI doesn't lose entry
+      tempId = `tmp-book-${Date.now()}`
 
       const payload = {
         book_code: form.book_code.trim() || `BK-${Date.now()}`,
@@ -1432,6 +1542,21 @@ function AdminBooks() {
         lost: Number(form.lost) || 0,
         cover_url: form.cover_url || null,
       }
+      // add optimistic temp item
+      const tempItem: any = {
+        id: editingId ?? tempId,
+        isbn: payload.isbn,
+        title: payload.title,
+        author: payload.author,
+        publisher: payload.publisher,
+        category: payload.category,
+        copies: payload.copies,
+        available: payload.available,
+        rack: 'R1',
+        updatedOn: new Date().toISOString(),
+        cover_url: payload.cover_url ?? null,
+      }
+      setBooks((cur) => mergeRecords(cur, [tempItem]))
 
       const saved = await upsertBook({
         ...payload,
@@ -1440,28 +1565,26 @@ function AdminBooks() {
 
       const now = new Date().toISOString().slice(0, 16).replace('T', ' ')
 
-      setBooks((current) => {
-        const next = current.filter((book) => book.id !== (saved.id ?? editingId ?? book.id))
-        const item: any = {
-          id: saved.id ?? payload.book_code,
-          isbn: (saved as any).isbn ?? payload.isbn,
-          title: (saved as any).title ?? title,
-          author: (saved as any).author ?? author,
-          publisher: (saved as any).publisher ?? payload.publisher,
-          category: (saved as any).category ?? payload.category,
-          copies: (saved as any).copies ?? payload.copies,
-          available: (saved as any).available ?? payload.available,
-          rack: 'R1',
-          updatedOn: now,
-          cover_url: (saved as any).cover_url ?? (saved as any).coverUrl ?? payload.cover_url ?? null,
-        }
-        return [item, ...next]
-      })
+      setBooks((current) => mergeRecords(current, [{
+        id: saved.id ?? payload.book_code,
+        isbn: (saved as any).isbn ?? payload.isbn,
+        title: (saved as any).title ?? title,
+        author: (saved as any).author ?? author,
+        publisher: (saved as any).publisher ?? payload.publisher,
+        category: (saved as any).category ?? payload.category,
+        copies: (saved as any).copies ?? payload.copies,
+        available: (saved as any).available ?? payload.available,
+        rack: 'R1',
+        updatedOn: now,
+        cover_url: (saved as any).cover_url ?? (saved as any).coverUrl ?? payload.cover_url ?? null,
+      }]))
 
       const savedMessage = editingId ? 'Book updated and synced.' : 'Book saved and synced to the database.'
       setMessage(savedMessage)
       resetForm()
     } catch (err: any) {
+      // remove optimistic temp item if present
+      if (tempId) setBooks((cur) => cur.filter((b) => b.id !== tempId))
       setMessage(err?.message || 'Unable to save the book.')
     } finally {
       setSaving(false)
@@ -1748,12 +1871,7 @@ function AdminStudents() {
     }))
 
     // Merge realtime students with local list so newly created students aren't dropped
-    setStudents((prev) => {
-      const byId = new Map<string, any>()
-      for (const m of mapped) byId.set(m.id, m)
-      for (const p of prev) if (!byId.has(p.id)) byId.set(p.id, p)
-      return Array.from(byId.values())
-    })
+    setStudents((prev) => mergeRecords(prev, mapped))
   }, [studentsRt])
 
   const [query, setQuery] = useState('')
@@ -1815,53 +1933,49 @@ function AdminStudents() {
 
     let tempId: string | null = null
     try {
-        setSaving(true)
-        setMessage(null)
+      setSaving(true)
+      setMessage(null)
 
-        // optimistic create: add a temp entry so the UI doesn't lose the new student
-        tempId = `tmp-${Date.now()}`
-        const tempItem = {
-          id: tempId,
-          name: trimmed.name,
-          course: trimmed.course,
-          card: trimmed.card || 'LC-NEW',
-          email: trimmed.email,
-          status: trimmed.status,
-        }
-        console.debug('Creating optimistic student entry', tempItem)
-        setStudents((cur) => [tempItem, ...cur])
+      // optimistic create: add a temp entry so the UI doesn't lose the new student
+      tempId = `tmp-${Date.now()}`
+      const tempItem = {
+        id: tempId,
+        name: trimmed.name,
+        course: trimmed.course,
+        card: trimmed.card || 'LC-NEW',
+        email: trimmed.email,
+        status: trimmed.status,
+      }
+      console.debug('Creating optimistic student entry', tempItem)
+      setStudents((cur) => mergeRecords(cur, [tempItem]))
 
-        const saved = await upsertStudent({
-          id: editingId ?? undefined,
-          student_code: trimmed.student_code,
-          name: trimmed.name,
-          email: trimmed.email,
-          course: trimmed.course,
-          status: trimmed.status,
-        } as any)
+      const saved = await upsertStudent({
+        id: editingId ?? undefined,
+        student_code: trimmed.student_code,
+        name: trimmed.name,
+        email: trimmed.email,
+        course: trimmed.course,
+        status: trimmed.status,
+      } as any)
 
-        console.debug('upsertStudent returned', saved)
+      console.debug('upsertStudent returned', saved)
 
-        await upsertAppUser({
-          email: trimmed.email,
-          password: 'user123',
-          role: 'student',
-          student_id: saved.id,
-        })
+      await upsertAppUser({
+        email: trimmed.email,
+        password: 'user123',
+        role: 'student',
+        student_id: saved.id,
+      })
 
-        // replace optimistic entry with saved DB row, and remove duplicates
-        setStudents((current) => {
-          const filtered = current.filter((s) => s.id !== tempId && s.id !== saved.id)
-          const item = {
-            id: saved.id ?? trimmed.student_code,
-            name: saved.name,
-            course: saved.course,
-            card: trimmed.card || 'LC-NEW',
-            email: saved.email,
-            status: saved.status ?? trimmed.status,
-          }
-          return [item, ...filtered]
-        })
+      // replace optimistic entry with saved DB row, and remove duplicates
+      setStudents((current) => mergeRecords(current, [{
+        id: saved.id ?? trimmed.student_code,
+        name: saved.name,
+        course: saved.course,
+        card: trimmed.card || 'LC-NEW',
+        email: saved.email,
+        status: saved.status ?? trimmed.status,
+      }]))
 
       setShowForm(false)
       setEditingId(null)
@@ -2022,6 +2136,42 @@ function AdminStudents() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function AdminUsers() {
+  const { data: usersRt } = useSupabaseRealtime('app_users')
+  const [users, setUsers] = useState(() => [])
+
+  useEffect(() => {
+    if (!usersRt) return
+    const mapped = (usersRt ?? []).map((u: any) => ({
+      id: u.id,
+      email: u.email ?? '',
+      password: u.password ?? '',
+      role: u.role ?? '',
+      studentId: u.student_id ?? null,
+    }))
+    setUsers(mapped)
+  }, [usersRt])
+
+  return (
+    <div>
+      <PageHeader title="Users" subtitle="Application users (app_users table)" />
+      <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+        <Table headers={["ID", "Email", "Password", "Role", "Student ID"]}>
+          {users.map((u: any) => (
+            <Tr key={u.id}>
+              <Td className="font-mono text-xs">{u.id}</Td>
+              <Td>{u.email}</Td>
+              <Td className="text-sm text-gray-500">{u.password}</Td>
+              <Td>{u.role}</Td>
+              <Td className="font-mono text-xs">{u.studentId ?? 'NULL'}</Td>
+            </Tr>
+          ))}
+        </Table>
+      </div>
     </div>
   )
 }
@@ -2588,7 +2738,7 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <Icons.Dashboard /> },
     { id: 'books', label: 'Books', icon: <Icons.Book /> },
-    { id: 'students', label: 'Students', icon: <Icons.Users /> },
+    { id: 'app-users', label: 'Users', icon: <Icons.Users /> },
     { id: 'library-cards', label: 'Library Cards', icon: <Icons.IdCard /> },
     { id: 'borrower-cards', label: 'Borrower Cards', icon: <Icons.Book /> },
     { id: 'borrowing-records', label: 'Borrowing Records', icon: <Icons.FileText /> },
@@ -2602,7 +2752,7 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
     switch (view) {
       case 'dashboard': return <AdminDashboard dashboard={dashboard} />
       case 'books': return <AdminBooks />
-      case 'students': return <AdminStudents />
+      case 'app-users': return <AdminUsers />
       case 'library-cards': return <AdminLibraryCards />
       case 'borrower-cards': return <AdminBorrowerCards />
       case 'borrowing-records': return <AdminBorrowingRecords />
@@ -2813,6 +2963,11 @@ export default function App() {
   const [auth, setAuth] = useState<{ role: Role; userId?: string; studentId?: string } | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
 
+  // start auth -> DB sync so self-service signups create student rows
+  useEffect(() => {
+    startAuthSync()
+  }, [])
+
   async function handleLogin(role: Role, email: string, password: string) {
     const res = await login(email, password, role)
     setAuth({ role, userId: res.user?.id, studentId: res.student?.id })
@@ -2826,11 +2981,18 @@ export default function App() {
     }
 
     if (auth.role === 'student' && auth.studentId) {
-      fetchStudentBorrowingRecords(auth.studentId).then(() => { }).catch(() => { })
+      fetchStudentBorrowingRecords().then(() => { }).catch(() => { })
     }
   }, [auth])
 
-  if (!auth) return <LoginPage onLogin={handleLogin} />
+  if (!auth) return <LoginPage onLogin={handleLogin} onSignUpComplete={(appUser, student) => {
+    // When a new account is created, set app auth state and navigate to student area.
+    try {
+      setAuth({ role: 'student', userId: appUser?.id ?? undefined, studentId: student?.id ?? undefined })
+    } catch (e) {
+      console.debug('[App] onSignUpComplete failed', e)
+    }
+  }} />
   if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} />
   return <AdminLayout onLogout={() => setAuth(null)} dashboard={dashboard} />
 }

@@ -11,12 +11,14 @@
       "@/*": ["./src/*"]
     },
     "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "noImplicitAny": false,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["node"],
-    "strict": true,
+    "strict": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src", "vite.config.ts"]

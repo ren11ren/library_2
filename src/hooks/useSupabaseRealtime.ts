@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import supabase, { mapKeysToCamel } from '../supabaseClient'
+import mergeRecords from '../lib/mergeRecords'
 
 type RealtimePayload = any
 
@@ -39,32 +40,17 @@ export function useSupabaseRealtime(tableName: string) {
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: tableName },
-                    (payload: RealtimePayload) => {
-                        console.debug(`[realtime] ${tableName} payload:`, payload)
+                (payload: RealtimePayload) => {
+                    console.debug(`[realtime] ${tableName} payload:`, payload)
                     try {
                         const ev = payload.eventType || payload.event
                         const newRow = mapKeysToCamel(payload.new)
                         const oldRow = payload.old ? mapKeysToCamel(payload.old) : null
 
                         if (ev === 'INSERT') {
-                            setData((prev) => {
-                                // avoid duplicates: match by id, studentCode, bookCode, or email
-                                const existsIdx = prev.findIndex((r) => {
-                                    if (r.id && newRow.id && r.id === newRow.id) return true
-                                    if (r.studentCode && newRow.studentCode && r.studentCode === newRow.studentCode) return true
-                                    if (r.bookCode && newRow.bookCode && r.bookCode === newRow.bookCode) return true
-                                    if (r.email && newRow.email && r.email === newRow.email) return true
-                                    return false
-                                })
-                                if (existsIdx >= 0) {
-                                    const copy = [...prev]
-                                    copy[existsIdx] = { ...copy[existsIdx], ...newRow }
-                                    return copy
-                                }
-                                return [newRow, ...prev]
-                            })
+                            setData((prev) => mergeRecords(prev, [newRow]))
                         } else if (ev === 'UPDATE') {
-                            setData((prev) => prev.map((r) => (r.id === newRow.id ? newRow : r)))
+                            setData((prev) => mergeRecords(prev, [newRow]))
                         } else if (ev === 'DELETE') {
                             setData((prev) => prev.filter((r) => r.id !== oldRow?.id))
                         }
