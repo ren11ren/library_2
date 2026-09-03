@@ -1,6 +1,16 @@
 import supabase from '../supabaseClient'
 import type { AuthSession, UserRole } from './database.types'
 
+function normalizeStudentCode(value: string): string {
+    const cleaned = String(value ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')
+    return cleaned.startsWith('STU-') ? cleaned : `STU-${cleaned}`
+}
+
+function buildStudentEmailFromCode(value: string): string {
+    const code = normalizeStudentCode(value).replace(/^STU-/i, '')
+    return `${code.replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`
+}
+
 export * from './mockApi'
 
 // Prefer Supabase-backed implementations for some read operations.
@@ -9,20 +19,61 @@ export {
     getUserBorrowedBooks as fetchStudentBorrowingRecords,
 } from '../services/libraryService'
 
+// Prefer Supabase-backed borrow/return so availability matches DB state.
+import { borrowBook as sbBorrowBook, returnBook as sbReturnBook } from '../services/libraryService'
+
+export async function borrowBook(studentId: string | undefined, bookId: string) {
+    try {
+        // services/libraryService.borrowBook expects only bookId and uses supabase auth to get user.
+        // Call it directly; if it fails (no auth), fall back to mock implementation.
+        return await sbBorrowBook(bookId)
+    } catch (err) {
+        console.debug('[api] supabase borrow failed, falling back to mock', err)
+        const { borrowBook: mockBorrow } = await import('./mockApi')
+        // If Supabase didn't authenticate or returned no book, try mapping the DB id to an ISBN/book_code
+        try {
+            const { data: bookRow, error: fetchErr } = await supabase.from('books').select('isbn, book_code, title').eq('id', bookId).maybeSingle()
+            if (!fetchErr && bookRow) {
+                const identifier = (bookRow as any).isbn ?? (bookRow as any).book_code ?? bookId
+                console.debug('[api] mapping book id to identifier for mock fallback', { bookId, identifier })
+                return await mockBorrow(studentId as string, identifier)
+            }
+        } catch (mapErr) {
+            console.debug('[api] error mapping book id for mock fallback', mapErr)
+        }
+
+        // fallback to original id if mapping failed
+        return await mockBorrow(studentId as string, bookId)
+    }
+}
+
+export async function returnBook(recordId: string) {
+    try {
+        return await sbReturnBook(recordId)
+    } catch (err) {
+        console.debug('[api] supabase return failed, falling back to mock', err)
+        const { processReturn: mockReturn } = await import('./mockApi')
+        return await mockReturn(recordId, '')
+    }
+}
+
 export async function login(emailOrId: string, password: string, role: UserRole): Promise<AuthSession> {
     const identifier = String(emailOrId || '').trim()
     try {
         // Use Supabase auth to sign in. Accept either email or student code.
         let emailToUse = identifier
+        let studentCode: string | null = null
         if (!identifier.includes('@')) {
-            // Treat as student code (e.g. STU-2021-001 or 2021-001)
-            const code = identifier.toUpperCase().startsWith('STU-') ? identifier.toUpperCase() : `STU-${identifier}`
-            const { data: sRow } = await supabase.from('students').select('email').eq('student_code', code).maybeSingle()
+            studentCode = normalizeStudentCode(identifier)
+            const { data: sRow } = await supabase.from('students').select('email, student_code').eq('student_code', studentCode).maybeSingle()
             if (sRow && sRow.email) {
                 emailToUse = sRow.email
             } else {
-                // No matching student; fail fast so UI shows invalid identifier
-                throw new Error('Invalid email or student ID')
+                emailToUse = buildStudentEmailFromCode(studentCode)
+                const { data: derivedRow } = await supabase.from('students').select('email').eq('email', emailToUse).maybeSingle()
+                if (!derivedRow) {
+                    throw new Error('Invalid email or student ID')
+                }
             }
         }
 

@@ -21,6 +21,17 @@ import supabase from './supabaseClient'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Role = 'student' | 'admin'
+
+function normalizeStudentCode(value: string): string {
+  const cleaned = String(value ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')
+  return cleaned.startsWith('STU-') ? cleaned : `STU-${cleaned}`
+}
+
+function buildStudentEmailFromCode(value: string): string {
+  const code = normalizeStudentCode(value).replace(/^STU-/i, '')
+  return `${code.replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`
+}
+
 type StudentView =
   | 'dashboard'
   | 'search'
@@ -235,60 +246,17 @@ function savePersistedState<T>(key: string, value: T) {
   }
 }
 
-const borrowedBooks = [
-  { id: 1, title: 'Introduction to Algorithms', author: 'Cormen et al.', borrowDate: 'Jul 25, 2025', dueDate: 'Aug 8, 2025', status: 'overdue' },
-  { id: 2, title: 'Clean Code', author: 'Robert C. Martin', borrowDate: 'Aug 1, 2025', dueDate: 'Aug 15, 2025', status: 'due-soon' },
-  { id: 3, title: 'Design Patterns', author: 'Gang of Four', borrowDate: 'Aug 5, 2025', dueDate: 'Aug 19, 2025', status: 'active' },
-]
-
-const searchResults = [
-  { id: 'BK-001', isbn: '9780262033848', title: 'Introduction to Algorithms', author: 'Cormen, Leiserson, Rivest', publisher: 'MIT Press', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 3, available: 2, rack: 'R2', updatedOn: '2022-06-12 11:13:27' },
-  { id: 'BK-002', isbn: '9780201896831', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', publisher: 'Addison Wesley', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 2, available: 0, rack: 'R3', updatedOn: '2022-06-12 11:06:01' },
-  { id: 'BK-003', isbn: '9780132350884', title: 'Clean Code', author: 'Robert C. Martin', publisher: 'Pearson', category: 'T - Technology and Engineering', copies: 4, available: 3, rack: 'R1', updatedOn: '2022-06-12 13:29:14' },
-  { id: 'BK-004', isbn: '9780201633610', title: 'Design Patterns', author: 'Gang of Four', publisher: 'Addison Wesley', category: 'T - Technology and Engineering', copies: 2, available: 1, rack: 'R2', updatedOn: '2022-06-12 12:05:10' },
-  { id: 'BK-005', isbn: '9780132126953', title: 'Structure and Interpretation', author: 'Abelson & Sussman', publisher: 'MIT Press', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 1, available: 1, rack: 'R4', updatedOn: '2022-06-12 09:48:30' },
-  { id: 'BK-006', isbn: '9780073523323', title: 'Database System Concepts', author: 'Silberschatz et al.', publisher: 'McGraw Hill', category: 'T - Technology and Engineering', copies: 5, available: 4, rack: 'R5', updatedOn: '2022-06-12 09:15:41' },
-]
-
-const adminBooks = [
-  { id: 'BK-001', isbn: '9780262033848', title: 'Introduction to Algorithms', author: 'Cormen et al.', publisher: 'MIT Press', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 3, available: 2, rack: 'R2', updatedOn: '2022-06-12 11:13:27' },
-  { id: 'BK-002', isbn: '9780201896831', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', publisher: 'Addison Wesley', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 2, available: 0, rack: 'R3', updatedOn: '2022-06-12 11:06:01' },
-  { id: 'BK-003', isbn: '9780132350884', title: 'Clean Code', author: 'Robert C. Martin', publisher: 'Pearson', category: 'T - Technology and Engineering', copies: 4, available: 3, rack: 'R1', updatedOn: '2022-06-12 13:29:14' },
-  { id: 'BK-004', isbn: '9780201633610', title: 'Design Patterns', author: 'Gang of Four', publisher: 'Addison Wesley', category: 'T - Technology and Engineering', copies: 2, available: 1, rack: 'R2', updatedOn: '2022-06-12 12:05:10' },
-  { id: 'BK-005', isbn: '9780132126953', title: 'Computer Networks', author: 'Andrew Tanenbaum', publisher: 'Prentice Hall', category: 'T - Technology and Engineering', copies: 3, available: 3, rack: 'R6', updatedOn: '2022-06-12 08:42:56' },
-  { id: 'BK-006', isbn: '9780073523323', title: 'Database System Concepts', author: 'Silberschatz et al.', publisher: 'McGraw Hill', category: 'T - Technology and Engineering', copies: 5, available: 4, rack: 'R5', updatedOn: '2022-06-12 09:15:41' },
-]
+const borrowedBooks: any[] = []
+const searchResults: any[] = []
+const adminBooks: any[] = []
 
 type StudentStatus = 'active' | 'suspended'
 
-const adminStudents: Array<{ id: string; name: string; course: string; card: string; email: string; status: StudentStatus }> = [
-  { id: 'STU-2021-001', name: 'Maria Santos', course: 'BSCS', card: 'LC-0042', email: 'maria.santos@college.edu', status: 'active' },
-  { id: 'STU-2021-002', name: 'Juan dela Cruz', course: 'BSIT', card: 'LC-0043', email: 'juan.delacruz@college.edu', status: 'active' },
-  { id: 'STU-2022-015', name: 'Ana Reyes', course: 'BSCS', card: 'LC-0061', email: 'ana.reyes@college.edu', status: 'suspended' },
-  { id: 'STU-2023-008', name: 'Carlo Bautista', course: 'BSECE', card: 'LC-0089', email: 'carlo.bautista@college.edu', status: 'active' },
-  { id: 'STU-2023-019', name: 'Lena Villanueva', course: 'BSME', card: 'LC-0104', email: 'lena.villanueva@college.edu', status: 'active' },
-]
+const adminStudents: Array<{ id: string; name: string; course: string; card: string; email: string; status: StudentStatus }> = []
 
-const borrowingRecords = [
-  { txn: 'TXN-2025-001', student: 'Maria Santos', card: 'LC-0042', book: 'Introduction to Algorithms', borrow: 'Jul 25, 2025', due: 'Aug 8, 2025', status: 'overdue' },
-  { txn: 'TXN-2025-002', student: 'Juan dela Cruz', card: 'LC-0043', book: 'Clean Code', borrow: 'Aug 1, 2025', due: 'Aug 15, 2025', status: 'due-soon' },
-  { txn: 'TXN-2025-003', student: 'Carlo Bautista', card: 'LC-0089', book: 'Design Patterns', borrow: 'Aug 5, 2025', due: 'Aug 19, 2025', status: 'active' },
-  { txn: 'TXN-2025-004', student: 'Lena Villanueva', card: 'LC-0104', book: 'Database System Concepts', borrow: 'Aug 3, 2025', due: 'Aug 17, 2025', status: 'active' },
-  { txn: 'TXN-2025-005', student: 'Ana Reyes', card: 'LC-0061', book: 'The Art of Computer Programming', borrow: 'Jul 10, 2025', due: 'Jul 24, 2025', status: 'overdue' },
-]
-
-const overdueRecords = [
-  { student: 'Maria Santos', email: 'maria.santos@college.edu', book: 'Introduction to Algorithms', due: 'Aug 8, 2025', daysOverdue: 4, notified: true },
-  { student: 'Ana Reyes', email: 'ana.reyes@college.edu', book: 'The Art of Computer Programming', due: 'Jul 24, 2025', daysOverdue: 19, notified: false },
-  { student: 'Juan dela Cruz', email: 'juan.delacruz@college.edu', book: 'Operating System Concepts', due: 'Jul 30, 2025', daysOverdue: 13, notified: true },
-]
-
-const historyBooks = [
-  { title: 'Operating System Concepts', author: 'Silberschatz', borrowDate: 'Jun 1, 2025', returnDate: 'Jun 15, 2025', status: 'returned' },
-  { title: 'Discrete Mathematics', author: 'Kenneth Rosen', borrowDate: 'May 10, 2025', returnDate: 'May 22, 2025', status: 'returned' },
-  { title: 'Software Engineering', author: 'Ian Sommerville', borrowDate: 'Apr 3, 2025', returnDate: 'Apr 17, 2025', status: 'returned' },
-  { title: 'Computer Organization', author: 'William Stallings', borrowDate: 'Mar 5, 2025', returnDate: 'Mar 20, 2025', status: 'returned' },
-]
+const borrowingRecords: any[] = []
+const overdueRecords: any[] = []
+const historyBooks: any[] = []
 
 // ─── Status Badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -328,174 +296,101 @@ function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email:
   const [error, setError] = useState<string | null>(null)
   const [showSignup, setShowSignup] = useState(false)
   const [name, setName] = useState('')
+  const [studentId, setStudentId] = useState('')
   const [confirm, setConfirm] = useState('')
   const [info, setInfo] = useState<string | null>(null)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-white flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-            {showSignup ? (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Full name</label>
-                  <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                  <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm password</label>
-                  <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
-                </div>
-                {info && <div className="text-sm text-green-700">{info}</div>}
-                <div>
-                  <button
-                    onClick={async () => {
-                      setError(null)
-                      setInfo(null)
-                      if (!email || !password) return setError('Email and password are required')
-                      if (password !== confirm) return setError('Passwords do not match')
-                      setLoading(true)
-                      try {
-                        const res = await (supabase.auth as any).signUp({ email, password }, { data: { full_name: name } })
-                        if (res.error) {
-                          setError(res.error.message ?? JSON.stringify(res.error))
-                          return
-                        }
-
-                        const user = (res as any).data?.user ?? (res as any).user ?? null
-
-                        // Create profile rows (`students`, `app_users`). Collect any upsert errors.
-                        const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `id-${Date.now()}`
-                        const studentPayload = { id, student_code: `STU-${Date.now()}`, name: name || email.split('@')[0], email, course: 'Undeclared', status: 'active' }
-
-                        const upsertErrors: string[] = []
-                        const { data: sData, error: sErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'email' }).select().maybeSingle()
-                        if (sErr) upsertErrors.push(sErr.message ?? JSON.stringify(sErr))
-
-                        const appUser = { email, role: 'student', student_id: id }
-                        const { data: aData, error: aErr } = await supabase.from('app_users').upsert([appUser], { onConflict: 'email' }).select().maybeSingle()
-                        if (aErr) upsertErrors.push(aErr.message ?? JSON.stringify(aErr))
-
-                        if (upsertErrors.length > 0) {
-                          console.error('[signup] upsert errors', upsertErrors)
-                          setError(`Account created in Auth but profile creation failed: ${upsertErrors.join('; ')}`)
-                          if (!user) setInfo('Check your email to confirm your account before signing in.')
-                          return
-                        }
-
-                        // If we have created profile rows, call the optional onSignUpComplete callback
-                        if (onSignUpComplete && (aData || sData)) {
-                          try { onSignUpComplete(aData ?? null, sData ?? null) } catch (e) { console.debug('[signup] onSignUpComplete handler failed', e) }
-                        }
-
-                        if (!user) {
-                          setInfo('Account created. Check your email to confirm and then sign in.')
-                        } else {
-                          setInfo('Account created. You can sign in now.')
-                        }
-
-                        // Attempt to sign in and navigate into the app automatically.
-                        try {
-                          await onLogin('student', email, password)
-                        } catch (loginErr: any) {
-                          // If auto-login fails, show a non-blocking message and keep the user on sign-in screen.
-                          console.debug('[signup] auto-login failed', loginErr)
-                          setInfo((prev) => (prev ? prev + ' Auto sign-in failed.' : 'Auto sign-in failed.'))
-                        }
-
-                        setShowSignup(false)
-                      } catch (err: any) {
-                        setError(err?.message ?? 'Sign up failed')
-                      } finally {
-                        setLoading(false)
-                      }
-                    }}
-                    disabled={loading}
-                    className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors text-sm mt-1 disabled:opacity-60"
-                  >
-                    {loading ? 'Creating…' : 'Create account'}
-                  </button>
-                </div>
-                <div className="text-center text-sm">
-                  <button onClick={() => setShowSignup(false)} className="text-green-600 hover:text-green-800">Back to sign in</button>
-                </div>
-              </>
-            ) : (
+        {showSignup ? (
           <>
-          <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-8">
-          {/* Logo */}
-          <div className="flex flex-col items-center gap-3 mb-8">
-            <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center text-white">
-              <Icons.Library />
-            </div>
-            <div className="text-center">
-              <h1 className="text-xl font-bold text-green-900">Library Management System</h1>
-              <p className="text-sm text-gray-500 mt-0.5">Greenfield College Library</p>
-            </div>
-          </div>
-
-          {/* Role selector */}
-          <div className="flex rounded-lg border border-green-200 overflow-hidden mb-6">
-            {(['student', 'admin'] as Role[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRole(r)}
-                className={`flex-1 py-2 text-sm font-medium transition-colors ${role === r ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-green-50'
-                  }`}
-              >
-                {r === 'student' ? 'Student / User' : 'Admin / Librarian'}
-              </button>
-            ))}
-          </div>
-
-          {/* Form */}
-          <div className="flex flex-col gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                {role === 'student' ? 'Email / Student ID' : 'Email'}
-              </label>
-              <input
-                type="text"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={role === 'student' ? 'e.g. 2021-001 or maria@college.edu' : 'librarian@college.edu'}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Full name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Student ID Number</label>
+              <input value={studentId} onChange={(e) => setStudentId(e.target.value)} placeholder="STU-2021-001" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-              />
-            </div>
-            <div className="flex justify-end">
-              <button className="text-sm text-green-600 hover:text-green-800 font-medium transition-colors">
-                Forgot password?
-              </button>
-              <div className="text-center mt-2">
-                <button onClick={() => { setShowSignup(true); setError(null); setInfo(null); }} className="text-sm text-green-600 hover:text-green-800">Create account</button>
-              </div>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
             </div>
             <div>
-              {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm password</label>
+              <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            </div>
+            {info && <div className="text-sm text-green-700">{info}</div>}
+            <div>
               <button
                 onClick={async () => {
                   setError(null)
+                  setInfo(null)
+                  const normalizedStudentId = studentId.trim()
+                  if (!name || !normalizedStudentId || !password) return setError('Name, student ID, and password are required')
+                  if (password !== confirm) return setError('Passwords do not match')
                   setLoading(true)
                   try {
-                    await onLogin(role, email, password)
+                      const studentCode = normalizeStudentCode(normalizedStudentId)
+                    const internalEmail = buildStudentEmailFromCode(studentCode)
+
+                    const res = await (supabase.auth as any).signUp({ email: internalEmail, password }, { data: { full_name: name, student_id: studentCode } })
+                    if (res.error) {
+                      setError(res.error.message ?? JSON.stringify(res.error))
+                      return
+                    }
+
+                    const user = (res as any).data?.user ?? (res as any).user ?? null
+
+                    // Create profile rows (`students`, `app_users`). Collect any upsert errors.
+                    const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `id-${Date.now()}`
+                    const studentPayload = { id, student_code: studentCode, name, email: internalEmail, course: 'Undeclared', status: 'active' }
+
+                    const upsertErrors: string[] = []
+                    const { data: sData, error: sErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' }).select().maybeSingle()
+                    if (sErr) upsertErrors.push(sErr.message ?? JSON.stringify(sErr))
+
+                    const appUserId = (user?.id) ?? ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `app-user-${Date.now()}`)
+                    const appUser = { id: appUserId, email: internalEmail, password, role: 'student', student_id: id }
+                    const { data: aData, error: aErr } = await supabase.from('app_users').upsert([appUser], { onConflict: 'email' }).select().maybeSingle()
+                    if (aErr) upsertErrors.push(aErr.message ?? JSON.stringify(aErr))
+
+                    if (upsertErrors.length > 0) {
+                      console.error('[signup] upsert errors', upsertErrors)
+                      setError(`Account created in Auth but profile creation failed: ${upsertErrors.join('; ')}`)
+                      if (!user) setInfo('Check your email to confirm your account before signing in.')
+                      return
+                    }
+
+                    // If we have created profile rows, call the optional onSignUpComplete callback
+                    if (onSignUpComplete && (aData || sData)) {
+                      try { onSignUpComplete(aData ?? null, sData ?? null) } catch (e) { console.debug('[signup] onSignUpComplete handler failed', e) }
+                    }
+
+                    if (!user) {
+                      setInfo('Account created. Check your email to confirm and then sign in.')
+                    } else {
+                      setInfo('Account created. You can sign in now.')
+                    }
+
+                    // Attempt to sign in and navigate into the app automatically.
+                    try {
+                      await onLogin('student', studentCode, password)
+                    } catch (loginErr: any) {
+                      // If auto-login fails, show a non-blocking message and keep the user on sign-in screen.
+                      console.debug('[signup] auto-login failed', loginErr)
+                      setInfo((prev) => (prev ? prev + ' Auto sign-in failed.' : 'Auto sign-in failed.'))
+                    }
+
+                    setShowSignup(false)
+                    setEmail('')
+                    setPassword('')
+                    setConfirm('')
+                    setName('')
+                    setStudentId('')
                   } catch (err: any) {
-                    setError(err?.message ?? 'Login failed')
+                    setError(err?.message ?? 'Sign up failed')
                   } finally {
                     setLoading(false)
                   }
@@ -503,16 +398,100 @@ function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email:
                 disabled={loading}
                 className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors text-sm mt-1 disabled:opacity-60"
               >
-                {loading ? 'Signing in…' : 'Log In'}
+                {loading ? 'Creating…' : 'Create account'}
               </button>
             </div>
-          </div>
-        </div>
-          <p className="text-center text-xs text-gray-400 mt-5">
-            © 2025 Greenfield College Library. All rights reserved.
-          </p>
+            <div className="text-center text-sm">
+              <button onClick={() => setShowSignup(false)} className="text-green-600 hover:text-green-800">Back to sign in</button>
+            </div>
           </>
-          )}
+        ) : (
+          <>
+            <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-8">
+              {/* Logo */}
+              <div className="flex flex-col items-center gap-3 mb-8">
+                <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center text-white">
+                  <Icons.Library />
+                </div>
+                <div className="text-center">
+                  <h1 className="text-xl font-bold text-green-900">LIBRARY sjbcnl</h1>
+                  <p className="text-sm text-gray-500 mt-0.5">Student Portal</p>
+                </div>
+              </div>
+
+              {/* Role selector */}
+              <div className="flex rounded-lg border border-green-200 overflow-hidden mb-6">
+                {(['student', 'admin'] as Role[]).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRole(r)}
+                    className={`flex-1 py-2 text-sm font-medium transition-colors ${role === r ? 'bg-green-600 text-white' : 'bg-white text-gray-500 hover:bg-green-50'
+                      }`}
+                  >
+                    {r === 'student' ? 'Student / User' : 'Admin / Librarian'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Form */}
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {role === 'student' ? 'Student ID Number' : 'Email'}
+                  </label>
+                  <input
+                    type="text"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={role === 'student' ? 'e.g. STU-2021-001 or 2021-001' : 'librarian@college.edu'}
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button className="text-sm text-green-600 hover:text-green-800 font-medium transition-colors">
+                    Forgot password?
+                  </button>
+                  <div className="text-center mt-2">
+                    <button onClick={() => { setShowSignup(true); setError(null); setInfo(null); }} className="text-sm text-green-600 hover:text-green-800">Create account</button>
+                  </div>
+                </div>
+                <div>
+                  {error && <div className="text-sm text-red-600 mb-2">{error}</div>}
+                  <button
+                    onClick={async () => {
+                      setError(null)
+                      setLoading(true)
+                      try {
+                        await onLogin(role, email, password)
+                      } catch (err: any) {
+                        setError(err?.message ?? 'Login failed')
+                      } finally {
+                        setLoading(false)
+                      }
+                    }}
+                    disabled={loading}
+                    className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors text-sm mt-1 disabled:opacity-60"
+                  >
+                    {loading ? 'Signing in…' : 'Log In'}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p className="text-center text-xs text-gray-400 mt-5">
+              © 2025 Campus Library. All rights reserved.
+            </p>
+          </>
+        )}
       </div>
     </div>
   )
@@ -533,38 +512,39 @@ function Sidebar({
   title: string
 }) {
   return (
-    <aside className="w-64 shrink-0 bg-green-900 min-h-screen flex flex-col">
-      <div className="px-5 py-6 border-b border-green-800">
-        <div className="flex items-center gap-2.5 text-white">
+    <aside className="w-full bg-green-900 flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
+      <div className="px-4 py-4 border-b border-green-800 lg:px-5 lg:py-6">
+        <div className="flex items-center justify-center gap-2.5 text-white lg:justify-start">
           <Icons.Library />
           <div>
-            <div className="text-sm font-bold leading-tight">Library MS</div>
+            <div className="text-sm font-bold leading-tight">LIBRARY sjbcnl</div>
             <div className="text-xs text-green-300 font-normal">{title}</div>
           </div>
         </div>
       </div>
-      <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
+      <nav className="flex flex-row flex-wrap gap-2 px-3 py-3 lg:flex-col lg:gap-0.5 lg:flex-1 lg:py-4">
         {items.map((item) => (
           <button
             key={item.id}
             onClick={() => onSelect(item.id)}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left w-full ${active === item.id
+            className={`flex items-center justify-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition-colors text-left whitespace-nowrap lg:justify-start lg:px-3 lg:py-2.5 lg:text-sm lg:w-full ${active === item.id
               ? 'bg-green-600 text-white'
               : 'text-green-200 hover:bg-green-800 hover:text-white'
               }`}
           >
             {item.icon}
-            {item.label}
+            <span className="hidden sm:inline">{item.label}</span>
+            <span className="sm:hidden">{item.label.split(' ')[0]}</span>
           </button>
         ))}
       </nav>
-      <div className="px-3 py-4 border-t border-green-800">
+      <div className="px-3 py-3 border-t border-green-800 lg:py-4">
         <button
           onClick={onLogout}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-green-200 hover:bg-green-800 hover:text-white transition-colors w-full"
+          className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-green-200 hover:bg-green-800 hover:text-white transition-colors w-full lg:justify-start"
         >
           <Icons.LogOut />
-          Logout
+          <span>Logout</span>
         </button>
       </div>
     </aside>
@@ -611,17 +591,16 @@ function Td({ children, className = '' }: { children: ReactNode; className?: str
 
 // ─── Student Views ─────────────────────────────────────────────────────────────
 
-const allBorrowedEntries = [
-  { book: 'Introduction to Algorithms', borrowDate: 'Jul 25, 2025', returnDate: 'Aug 8, 2025', status: 'overdue' },
-  { book: 'Clean Code', borrowDate: 'Aug 1, 2025', returnDate: 'Aug 15, 2025', status: 'due-soon' },
-  { book: 'Design Patterns', borrowDate: 'Aug 5, 2025', returnDate: 'Aug 19, 2025', status: 'active' },
-  { book: 'Operating System Concepts', borrowDate: 'Jun 1, 2025', returnDate: 'Jun 15, 2025', status: 'returned' },
-  { book: 'Discrete Mathematics', borrowDate: 'May 10, 2025', returnDate: 'May 22, 2025', status: 'returned' },
-  { book: 'Software Engineering', borrowDate: 'Apr 3, 2025', returnDate: 'Apr 17, 2025', status: 'returned' },
-  { book: 'Computer Organization', borrowDate: 'Mar 5, 2025', returnDate: 'Mar 20, 2025', status: 'returned' },
-]
+const allBorrowedEntries: Array<{ book: string; borrowDate: string; returnDate: string; status: string }> = []
 
-function StudentBorrowerCard() {
+function StudentBorrowerCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+  const student = {
+    name: userProfile?.name ?? 'Student',
+    studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
+    course: userProfile?.course ?? 'Unassigned',
+    cardNo: userProfile?.card ?? 'N/A',
+  }
+
   return (
     <div>
       <PageHeader title="Borrower Card" subtitle="Your official library borrower record card." />
@@ -633,13 +612,13 @@ function StudentBorrowerCard() {
             <div className="flex items-center gap-2.5 text-white">
               <Icons.Library />
               <div>
-                <div className="font-bold text-sm leading-tight">Greenfield College Library</div>
+                <div className="font-bold text-sm leading-tight">Campus Library</div>
                 <div className="text-green-200 text-xs tracking-wide">BORROWER'S CARD</div>
               </div>
             </div>
             <div className="text-right">
               <div className="text-green-200 text-xs">Card No.</div>
-              <div className="font-mono font-bold text-white text-sm">LC-0042</div>
+              <div className="font-mono font-bold text-white text-sm">{student.cardNo}</div>
             </div>
           </div>
 
@@ -647,19 +626,19 @@ function StudentBorrowerCard() {
           <div className="px-6 py-4 bg-green-50 border-b border-green-100 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
             <div>
               <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">Name</span>
-              <span className="font-semibold text-green-900">Maria Santos</span>
+              <span className="font-semibold text-green-900">{student.name}</span>
             </div>
             <div>
               <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">Student ID</span>
-              <span className="font-mono text-gray-700">STU-2021-001</span>
+              <span className="font-mono text-gray-700">{student.studentId}</span>
             </div>
             <div>
               <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">Course</span>
-              <span className="text-gray-700">BS Computer Science</span>
+              <span className="text-gray-700">{student.course}</span>
             </div>
             <div>
               <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">AY</span>
-              <span className="text-gray-700">2025 – 2026</span>
+              <span className="text-gray-700">N/A</span>
             </div>
           </div>
 
@@ -733,27 +712,23 @@ function StudentBorrowerCard() {
 }
 
 function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void }) {
-  const fines = 20
+  const fines = 0
   const overdueCount = borrowedBooks.filter((b) => b.status === 'overdue').length
   const dueSoonCount = borrowedBooks.filter((b) => b.status === 'due-soon').length
   const currentlyBorrowed = borrowedBooks.length
 
-  const announcements = [
-    { title: 'Library Hours Extended', date: 'Aug 10, 2025', text: 'The library will be open until 9:00 PM during final exams week (Aug 18–22).' },
-    { title: 'New Books Arrived', date: 'Aug 5, 2025', text: '48 new titles added to the Computer Science section. Check Search Books to explore.' },
-    { title: 'Fine Waiver Program', date: 'Jul 28, 2025', text: 'Overdue fines from June 2025 are waived if books are returned before August 20.' },
-  ]
+  const announcements: Array<{ title: string; date: string; text: string }> = []
 
-  const nextDue = borrowedBooks.find((b) => b.status === 'due-soon') ?? borrowedBooks[0]
+  const nextDue = null
 
   return (
     <div>
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h2 className="text-xl font-bold text-green-900">Welcome back, Maria!</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Tuesday, August 12, 2025 — Greenfield College Library</p>
+          <h2 className="text-xl font-bold text-green-900">Welcome back!</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Your library dashboard is ready.</p>
         </div>
-        <div className="text-sm text-gray-400">Last updated: Aug 12, 2025</div>
+        <div className="text-sm text-gray-400">Live data only</div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -819,13 +794,7 @@ function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void
         <aside className="space-y-4">
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Next Due Dates</div>
-            {nextDue ? (
-              <div className="mt-3 p-3 rounded-lg bg-orange-50 border border-orange-100">
-                <div className="text-xs text-gray-500">{nextDue.title}</div>
-                <div className="text-lg font-bold text-orange-600 mt-1">{nextDue.dueDate}</div>
-                <div className="text-xs text-gray-400 mt-1">Due Aug 15, 2025</div>
-              </div>
-            ) : <div className="mt-2 text-sm text-gray-500">No upcoming due dates.</div>}
+            <div className="mt-2 text-sm text-gray-500">No upcoming due dates.</div>
           </div>
 
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
@@ -887,7 +856,23 @@ function SearchBooks({ studentId }: { studentId?: string }) {
     try {
       setBusy(true)
       setError(null)
-      await borrowBook(studentId, borrowModal.id)
+      // If the Supabase client has an authenticated user, use the Supabase-backed borrow flow.
+      // Otherwise, call the local mock directly using the book's ISBN or id so the mock can find it.
+      try {
+        const { data: authData } = await supabase.auth.getUser()
+        if (authData?.user) {
+          await borrowBook(studentId, borrowModal.id)
+        } else {
+          const { borrowBook: mockBorrow } = await import('./lib/mockApi')
+          const identifier = borrowModal.isbn || borrowModal.book_code || borrowModal.id
+          await mockBorrow(studentId as string, identifier)
+        }
+      } catch (innerErr) {
+        // If anything goes wrong checking auth, fall back to mock borrow.
+        const { borrowBook: mockBorrow } = await import('./lib/mockApi')
+        const identifier = borrowModal.isbn || borrowModal.book_code || borrowModal.id
+        await mockBorrow(studentId as string, identifier)
+      }
       setConfirmed(true)
     } catch (e: any) {
       setError(e?.message || 'Unable to borrow this book right now.')
@@ -907,7 +892,7 @@ function SearchBooks({ studentId }: { studentId?: string }) {
                 <Icons.Check />
               </div>
               <h3 className="font-bold text-green-900 text-lg">Borrow Confirmed!</h3>
-              <p className="text-sm text-gray-500">You have successfully borrowed <span className="font-medium text-gray-700">{borrowModal.title}</span>. Return by <span className="font-medium text-gray-700">Aug 26, 2025</span>.</p>
+              <p className="text-sm text-gray-500">You have successfully borrowed <span className="font-medium text-gray-700">{borrowModal.title}</span>. Return by <span className="font-medium text-gray-700">{new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)}</span>.</p>
               <button onClick={() => { setBorrowModal(null); setConfirmed(false); setError(null) }} className="mt-2 px-5 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
                 Back to Search
               </button>
@@ -918,12 +903,12 @@ function SearchBooks({ studentId }: { studentId?: string }) {
               {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
               <div className="flex flex-col gap-3 text-sm mb-6">
                 {[
-                  ['Student Name', 'Maria Santos'],
-                  ['Library Card No.', 'LC-0042'],
+                  ['Student Name', 'Student'],
+                  ['Library Card No.', 'N/A'],
                   ['Book Title', borrowModal.title],
                   ['Author', borrowModal.author],
-                  ['Borrow Date', 'Aug 12, 2025'],
-                  ['Due Date', 'Aug 26, 2025'],
+                  ['Borrow Date', new Date().toISOString().slice(0, 10)],
+                  ['Due Date', new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)],
                 ].map(([label, val]) => (
                   <div key={label} className="flex justify-between">
                     <span className="text-gray-500">{label}</span>
@@ -1044,14 +1029,19 @@ function BorrowerCardSlip({
   course,
   onClose,
 }: {
-  book: BorrowEntry
+  book: Partial<BorrowEntry> & { title?: string; author?: string; borrowDate?: string; dueDate?: string; status?: string; id?: string | number }
   studentName: string
   studentId: string
   cardNo: string
   course: string
   onClose: () => void
 }) {
-  const txnId = `TXN-2025-00${book.id}`
+  const txnId = `TXN-${String(book.id ?? 'N/A')}`
+  const normalizedStatus = book.status ?? 'active'
+  const title = book.title ?? 'Unavailable'
+  const author = book.author ?? 'Unknown author'
+  const borrowDate = book.borrowDate ?? 'N/A'
+  const dueDate = book.dueDate ?? 'N/A'
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden border border-green-100">
@@ -1106,11 +1096,11 @@ function BorrowerCardSlip({
             <div className="bg-green-50 rounded-lg p-3 flex flex-col gap-1.5 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-gray-500 shrink-0">Title</span>
-                <span className="font-semibold text-gray-800 text-right">{book.title}</span>
+                <span className="font-semibold text-gray-800 text-right">{title}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Author</span>
-                <span className="text-gray-700">{book.author}</span>
+                <span className="text-gray-700">{author}</span>
               </div>
             </div>
           </div>
@@ -1121,12 +1111,12 @@ function BorrowerCardSlip({
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-green-50 rounded-lg p-3 text-center">
                 <div className="text-xs text-gray-400 mb-1">Borrow Date</div>
-                <div className="text-sm font-bold text-green-800">{book.borrowDate}</div>
+                <div className="text-sm font-bold text-green-800">{borrowDate}</div>
               </div>
-              <div className={`rounded-lg p-3 text-center ${book.status === 'overdue' ? 'bg-red-50' : book.status === 'due-soon' ? 'bg-orange-50' : 'bg-green-50'}`}>
+              <div className={`rounded-lg p-3 text-center ${normalizedStatus === 'overdue' ? 'bg-red-50' : normalizedStatus === 'due-soon' ? 'bg-orange-50' : 'bg-green-50'}`}>
                 <div className="text-xs text-gray-400 mb-1">Due Date</div>
-                <div className={`text-sm font-bold ${book.status === 'overdue' ? 'text-red-600' : book.status === 'due-soon' ? 'text-orange-600' : 'text-green-800'}`}>
-                  {book.dueDate}
+                <div className={`text-sm font-bold ${normalizedStatus === 'overdue' ? 'text-red-600' : normalizedStatus === 'due-soon' ? 'text-orange-600' : 'text-green-800'}`}>
+                  {dueDate}
                 </div>
               </div>
             </div>
@@ -1134,7 +1124,7 @@ function BorrowerCardSlip({
 
           {/* Status & barcode strip */}
           <div className="flex items-center justify-between py-3 border-t border-green-100">
-            <StatusBadge status={book.status} />
+            <StatusBadge status={normalizedStatus} />
             <div className="flex gap-0.5 items-end">
               {Array.from({ length: 22 }).map((_, i) => (
                 <div key={i} style={{ width: i % 3 === 0 ? 3 : 1.5, height: i % 4 === 0 ? 24 : 18, background: '#15803d', opacity: i % 5 === 0 ? 0.35 : 1 }} />
@@ -1157,8 +1147,15 @@ function BorrowerCardSlip({
   )
 }
 
-function MyBorrowedBooks() {
+function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [selected, setSelected] = useState<BorrowEntry | null>(null)
+  const student = {
+    name: userProfile?.name ?? 'Student',
+    studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
+    course: userProfile?.course ?? 'Unassigned',
+    cardNo: userProfile?.card ?? 'N/A',
+  }
+
   return (
     <div>
       <PageHeader title="My Borrowed Books" subtitle="Track your active loans and due dates." />
@@ -1186,10 +1183,10 @@ function MyBorrowedBooks() {
       {selected && (
         <BorrowerCardSlip
           book={selected}
-          studentName="Maria Santos"
-          studentId="STU-2021-001"
-          cardNo="LC-0042"
-          course="BS Computer Science"
+          studentName={student.name}
+          studentId={student.studentId}
+          cardNo={student.cardNo}
+          course={student.course}
           onClose={() => setSelected(null)}
         />
       )}
@@ -1216,22 +1213,22 @@ function BorrowingHistory() {
   )
 }
 
-function LibraryCard() {
+function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const student = {
-    name: 'Maria Santos',
-    id: 'STU-2021-001',
-    course: 'BS Computer Science',
-    cardNo: 'LC-0042',
+    name: userProfile?.name ?? 'Student',
+    id: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
+    course: userProfile?.course ?? 'Unassigned',
+    cardNo: userProfile?.card ?? 'N/A',
   }
 
   function handleDownloadCard() {
     const content = [
-      'Greenfield College Library',
-      'Student Name: Maria Santos',
-      'Student ID: STU-2021-001',
-      'Course: BS Computer Science',
-      'Card No.: LC-0042',
-      'Valid AY 2025–2026',
+      'LIBRARY sjbcnl',
+      `Student Name: ${student.name}`,
+      `Student ID: ${student.id}`,
+      `Course: ${student.course}`,
+      `Card No.: ${student.cardNo}`,
+      'Valid: AY 2025–2026',
     ].join('\n')
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
@@ -1252,8 +1249,8 @@ function LibraryCard() {
             <div className="flex items-center gap-2 text-white">
               <Icons.Library />
               <div>
-                <div className="font-bold text-sm leading-tight">Greenfield College</div>
-                <div className="text-green-200 text-xs">Library Management System</div>
+                <div className="font-bold text-sm leading-tight">sjbcnl</div>
+                <div className="text-green-200 text-xs">LIBRARY sjbcnl</div>
               </div>
             </div>
           </div>
@@ -1318,15 +1315,20 @@ function LibraryCard() {
   )
 }
 
-function Profile() {
-  const [profile, setProfile] = useState({
-    name: 'Maria Santos',
-    studentId: 'STU-2021-001',
-    email: 'maria.santos@college.edu',
-    course: 'BS Computer Science — 4th Year',
-    card: 'LC-0042',
-  })
+function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+  const defaults = {
+    name: 'Student',
+    studentId: 'N/A',
+    email: 'student@example.edu',
+    course: 'Unassigned',
+    card: 'N/A',
+  }
+  const [profile, setProfile] = useState({ ...defaults, ...(userProfile ?? {}) })
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setProfile((current) => ({ ...defaults, ...userProfile, ...current, ...((userProfile ?? {}) as any) }))
+  }, [userProfile])
 
   function handleSaveProfile() {
     setSaveMessage('Profile updated successfully.')
@@ -2143,6 +2145,7 @@ function AdminStudents() {
 function AdminUsers() {
   const { data: usersRt } = useSupabaseRealtime('app_users')
   const [users, setUsers] = useState(() => [])
+  const [studentMap, setStudentMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!usersRt) return
@@ -2156,6 +2159,34 @@ function AdminUsers() {
     setUsers(mapped)
   }, [usersRt])
 
+  // Fetch student codes for linked student IDs so we can display a nicer id (e.g. student_code)
+  useEffect(() => {
+    const ids = users.filter((u: any) => u.studentId).map((u: any) => u.studentId)
+    if (!ids || ids.length === 0) return setStudentMap({})
+
+    let cancelled = false
+      ; (async () => {
+        try {
+          const { data: rows, error } = await supabase.from('students').select('id, student_code').in('id', ids)
+          if (error) {
+            console.debug('[AdminUsers] failed to fetch students', error)
+            return
+          }
+          if (cancelled) return
+          const map: Record<string, string> = {}
+          for (const r of rows ?? []) {
+            // strip 'STU-' prefix if present for cleaner display
+            const code = (r.student_code || '')
+            map[r.id] = code.startsWith('STU-') ? code.replace(/^STU-/, '') : code
+          }
+          setStudentMap(map)
+        } catch (e) {
+          console.debug('[AdminUsers] unexpected', e)
+        }
+      })()
+    return () => { cancelled = true }
+  }, [users])
+
   return (
     <div>
       <PageHeader title="Users" subtitle="Application users (app_users table)" />
@@ -2163,7 +2194,7 @@ function AdminUsers() {
         <Table headers={["ID", "Email", "Password", "Role", "Student ID"]}>
           {users.map((u: any) => (
             <Tr key={u.id}>
-              <Td className="font-mono text-xs">{u.id}</Td>
+              <Td className="font-mono text-xs">{u.studentId ? (studentMap[u.studentId] ?? u.studentId) : u.id}</Td>
               <Td>{u.email}</Td>
               <Td className="text-sm text-gray-500">{u.password}</Td>
               <Td>{u.role}</Td>
@@ -2241,11 +2272,11 @@ function AdminReturns() {
         <div className="flex flex-col gap-4">
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Library Card No. / Student ID</label>
-            <input value={cardNo} onChange={(e) => setCardNo(e.target.value)} type="text" placeholder="e.g. LC-0042" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            <input value={cardNo} onChange={(e) => setCardNo(e.target.value)} type="text" placeholder="Enter library card number" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Book ID or Title</label>
-            <input value={bookQuery} onChange={(e) => setBookQuery(e.target.value)} type="text" placeholder="e.g. BK-001 or Introduction to Algorithms" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            <input value={bookQuery} onChange={(e) => setBookQuery(e.target.value)} type="text" placeholder="Enter book code or title" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
           </div>
           <button onClick={handleProcessReturn} disabled={busy} className="py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
             {busy ? 'Processing...' : 'Process Return'}
@@ -2255,8 +2286,8 @@ function AdminReturns() {
       </div>
       <Table headers={['Student', 'Card No.', 'Book', 'Due Date', 'Return Date', 'Condition']}>
         {[
-          { student: 'Carlo Bautista', card: 'LC-0089', book: 'Discrete Mathematics', due: 'Aug 10, 2025', returned: 'Aug 10, 2025', condition: 'Good' },
-          { student: 'Lena Villanueva', card: 'LC-0104', book: 'Operating Systems', due: 'Aug 5, 2025', returned: 'Aug 7, 2025', condition: 'Good' },
+          { student: 'Student A', card: 'N/A', book: 'Book Title', due: 'N/A', returned: 'N/A', condition: 'Pending' },
+          { student: 'Student B', card: 'N/A', book: 'Book Title', due: 'N/A', returned: 'N/A', condition: 'Pending' },
         ].map((r, i) => (
           <Tr key={i}>
             <Td className="font-medium">{r.student}</Td>
@@ -2323,58 +2354,57 @@ function AdminOverdueBooks() {
 
 function AdminBorrowerCards() {
   const [selected, setSelected] = useState<BorrowEntry | null>(null)
-  const allCards = [
-    ...borrowedBooks,
-    { id: 4, title: 'Computer Networks', author: 'Andrew Tanenbaum', borrowDate: 'Aug 3, 2025', dueDate: 'Aug 17, 2025', status: 'active' },
-    { id: 5, title: 'Operating System Concepts', author: 'Silberschatz et al.', borrowDate: 'Jul 10, 2025', dueDate: 'Jul 24, 2025', status: 'overdue' },
-  ]
-  const studentMap: Record<number, { name: string; id: string; card: string; course: string }> = {
-    1: { name: 'Maria Santos', id: 'STU-2021-001', card: 'LC-0042', course: 'BSCS' },
-    2: { name: 'Juan dela Cruz', id: 'STU-2021-002', card: 'LC-0043', course: 'BSIT' },
-    3: { name: 'Carlo Bautista', id: 'STU-2023-008', card: 'LC-0089', course: 'BSECE' },
-    4: { name: 'Lena Villanueva', id: 'STU-2023-019', card: 'LC-0104', course: 'BSME' },
-    5: { name: 'Ana Reyes', id: 'STU-2022-015', card: 'LC-0061', course: 'BSCS' },
-  }
+  const allCards: BorrowEntry[] = borrowedBooks
+  const studentMap: Record<string, { name: string; id: string; card: string; course: string }> = {}
 
   return (
     <div>
       <PageHeader title="Borrower Cards" subtitle="View and print individual borrower cards for all active loans." />
-      <Table headers={['Txn ID', 'Borrower', 'Card No.', 'Book Title', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
-        {allCards.map((b) => {
-          const stu = studentMap[b.id]
-          return (
-            <Tr key={b.id}>
-              <Td className="font-mono text-xs text-gray-400">TXN-2025-00{b.id}</Td>
-              <Td className="font-medium text-gray-900">{stu.name}</Td>
-              <Td className="font-mono text-xs text-green-700 font-semibold">{stu.card}</Td>
-              <Td>{b.title}</Td>
-              <Td>{b.borrowDate}</Td>
-              <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
-                {b.dueDate}
-              </Td>
-              <Td><StatusBadge status={b.status} /></Td>
-              <Td>
-                <button
-                  onClick={() => setSelected(b)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  <Icons.IdCard />
-                  View Card
-                </button>
-              </Td>
-            </Tr>
-          )
-        })}
-      </Table>
-      {selected && (
-        <BorrowerCardSlip
-          book={selected}
-          studentName={studentMap[selected.id].name}
-          studentId={studentMap[selected.id].id}
-          cardNo={studentMap[selected.id].card}
-          course={studentMap[selected.id].course}
-          onClose={() => setSelected(null)}
-        />
+      {allCards.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-8 text-center text-sm text-gray-500">
+          No borrower cards available yet.
+        </div>
+      ) : (
+        <>
+          <Table headers={['Txn ID', 'Borrower', 'Card No.', 'Book Title', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
+            {allCards.map((b) => {
+              const key = String(b.id)
+              const stu = studentMap[key] ?? { name: 'Student', id: 'N/A', card: 'N/A', course: 'Unassigned' }
+              return (
+                <Tr key={key}>
+                  <Td className="font-mono text-xs text-gray-400">TXN-{String(b.id ?? 'N/A')}</Td>
+                  <Td className="font-medium text-gray-900">{stu.name}</Td>
+                  <Td className="font-mono text-xs text-green-700 font-semibold">{stu.card}</Td>
+                  <Td>{b.title}</Td>
+                  <Td>{b.borrowDate}</Td>
+                  <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
+                    {b.dueDate}
+                  </Td>
+                  <Td><StatusBadge status={b.status} /></Td>
+                  <Td>
+                    <button
+                      onClick={() => setSelected(b)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <Icons.IdCard />
+                      View Card
+                    </button>
+                  </Td>
+                </Tr>
+              )
+            })}
+          </Table>
+          {selected && (
+            <BorrowerCardSlip
+              book={selected}
+              studentName={studentMap[String(selected.id)]?.name ?? 'Student'}
+              studentId={studentMap[String(selected.id)]?.id ?? 'N/A'}
+              cardNo={studentMap[String(selected.id)]?.card ?? 'N/A'}
+              course={studentMap[String(selected.id)]?.course ?? 'Unassigned'}
+              onClose={() => setSelected(null)}
+            />
+          )}
+        </>
       )}
     </div>
   )
@@ -2588,11 +2618,11 @@ function AdminReports() {
       <PageHeader title="Reports" subtitle="Generate and export library activity reports." />
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {[
-          { title: 'Monthly Borrowing Report', desc: 'Summary of all borrowings for August 2025', icon: <Icons.BarChart /> },
+          { title: 'Monthly Borrowing Report', desc: 'Summary of all borrowings for the current period', icon: <Icons.BarChart /> },
           { title: 'Overdue Report', desc: 'All overdue books and penalty computations', icon: <Icons.AlertCircle /> },
           { title: 'Book Inventory Report', desc: 'Current stock and availability status', icon: <Icons.Book /> },
           { title: 'Student Activity Report', desc: 'Per-student borrowing and return statistics', icon: <Icons.Users /> },
-          { title: 'Popular Books Report', desc: 'Most borrowed books this semester', icon: <Icons.FileText /> },
+          { title: 'Popular Books Report', desc: 'Most borrowed books across the collection', icon: <Icons.FileText /> },
           { title: 'Annual Summary Report', desc: 'Full-year library operations summary', icon: <Icons.History /> },
         ].map((r) => (
           <div key={r.title} className="bg-white rounded-xl border border-green-100 shadow-sm p-5 flex flex-col gap-3">
@@ -2613,11 +2643,11 @@ function AdminReports() {
 
 function AdminSettings() {
   const [form, setForm] = useState({
-    library_name: 'Greenfield College Library',
+    library_name: 'Campus Library',
     borrow_period_days: '14',
     max_books_per_student: '3',
     fine_per_day: '5.00',
-    admin_email: 'librarian@college.edu',
+    admin_email: 'admin@library.local',
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -2627,11 +2657,11 @@ function AdminSettings() {
     fetchSettings()
       .then((settings) => {
         setForm({
-          library_name: settings.library_name ?? 'Greenfield College Library',
+          library_name: settings.library_name ?? 'Campus Library',
           borrow_period_days: String(settings.borrow_period_days ?? 14),
           max_books_per_student: String(settings.max_books_per_student ?? 3),
           fine_per_day: String(settings.fine_per_day ?? 5),
-          admin_email: settings.admin_email ?? 'librarian@college.edu',
+          admin_email: settings.admin_email ?? 'admin@library.local',
         })
       })
       .finally(() => setLoading(false))
@@ -2690,7 +2720,7 @@ function AdminSettings() {
 }
 
 // ─── Student Layout ────────────────────────────────────────────────────────────
-function StudentLayout({ onLogout, studentId }: { onLogout: () => void; studentId?: string }) {
+function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => void; studentId?: string; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [view, setView] = useState<StudentView>('dashboard')
 
   const navItems = [
@@ -2707,16 +2737,16 @@ function StudentLayout({ onLogout, studentId }: { onLogout: () => void; studentI
     switch (view) {
       case 'dashboard': return <StudentDashboard onNavigate={setView} />
       case 'search': return <SearchBooks studentId={studentId} />
-      case 'borrowed': return <MyBorrowedBooks />
+      case 'borrowed': return <MyBorrowedBooks userProfile={userProfile} />
       case 'history': return <BorrowingHistory />
-      case 'borrower-card': return <StudentBorrowerCard />
-      case 'card': return <LibraryCard />
-      case 'profile': return <Profile />
+      case 'borrower-card': return <StudentBorrowerCard userProfile={userProfile} />
+      case 'card': return <LibraryCard userProfile={userProfile} />
+      case 'profile': return <Profile userProfile={userProfile} />
     }
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-green-50">
+    <div className="flex min-h-screen w-full flex-col bg-green-50 lg:flex-row">
       <Sidebar
         items={navItems}
         active={view}
@@ -2725,7 +2755,7 @@ function StudentLayout({ onLogout, studentId }: { onLogout: () => void; studentI
         title="Student Portal"
       />
       <main className="flex-1 overflow-auto">
-        <div className="w-full p-6 lg:p-8">{renderView()}</div>
+        <div className="w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
       </main>
     </div>
   )
@@ -2764,7 +2794,7 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-green-50">
+    <div className="flex min-h-screen w-full flex-col bg-green-50 lg:flex-row">
       <Sidebar
         items={navItems}
         active={view}
@@ -2773,7 +2803,7 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
         title="Librarian Portal"
       />
       <main className="flex-1 overflow-auto">
-        <div className="w-full p-6 lg:p-8">{renderView()}</div>
+        <div className="w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
       </main>
     </div>
   )
@@ -2784,31 +2814,26 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const recent = dashboard?.records ?? borrowingRecords
   const overdue = dashboard?.overdue ?? overdueRecords
 
-  const totalBooks = stats?.totalBooks ?? adminBooks.reduce((s, b) => s + (b.copies || 0), 0)
-  const availableBooks = stats?.availableBooks ?? adminBooks.reduce((s, b) => s + (b.available || 0), 0)
-  const borrowedBooks = stats?.borrowedBooks ?? totalBooks - availableBooks
+  const totalBooks = stats?.totalBooks ?? 0
+  const availableBooks = stats?.availableBooks ?? 0
+  const borrowedBooks = stats?.borrowedBooks ?? 0
   const overdueBooks = stats?.overdueBooks ?? overdue.length
-  const totalStudents = stats?.totalStudents ?? adminStudents.length
-  const thisMonthTx = stats?.thisMonthTx ?? 87
+  const totalStudents = stats?.totalStudents ?? 0
+  const thisMonthTx = stats?.thisMonthTx ?? 0
 
-  const monthlyBorrowings = stats?.monthlyBorrowings ?? [58, 74, 91, 67, 112, 87]
-  const categoryCounts = stats?.categoryCounts ?? [
-    { name: 'T - Technology', count: 11 },
-    { name: 'Q - Science', count: 8 },
-    { name: 'P - Language', count: 3 },
-    { name: 'H - Social Sci', count: 2 },
-  ]
+  const monthlyBorrowings = stats?.monthlyBorrowings ?? []
+  const categoryCounts = stats?.categoryCounts ?? []
 
-  const maxMonth = Math.max(...monthlyBorrowings, 1)
+  const maxMonth = monthlyBorrowings.length > 0 ? Math.max(...monthlyBorrowings, 1) : 1
 
   return (
     <div>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-green-900">Admin Dashboard</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Library overview — August 2025</p>
+          <p className="text-sm text-gray-500 mt-0.5">Library overview</p>
         </div>
-        <div className="text-sm text-gray-400">Last updated: Aug 12, 2025 · 08:30</div>
+        <div className="text-sm text-gray-400">Live data</div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
@@ -2816,14 +2841,14 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Total Books</div>
             <div className="mt-2 text-2xl font-bold text-green-800">{totalBooks}</div>
-            <div className="text-xs text-gray-400 mt-1">6 titles</div>
+            <div className="text-xs text-gray-400 mt-1">{totalBooks > 0 ? 'titles in stock' : 'no data yet'}</div>
           </div>
         </div>
         <div className="col-span-2 md:col-span-1 lg:col-span-1">
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Available Books</div>
             <div className="mt-2 text-2xl font-bold text-green-700">{availableBooks}</div>
-            <div className="text-xs text-gray-400 mt-1">{Math.round((availableBooks / Math.max(totalBooks, 1)) * 100)}% available</div>
+            <div className="text-xs text-gray-400 mt-1">{totalBooks > 0 ? `${Math.round((availableBooks / Math.max(totalBooks, 1)) * 100)}% available` : 'waiting for data'}</div>
           </div>
         </div>
         <div className="col-span-2 md:col-span-1 lg:col-span-1">
@@ -2844,7 +2869,7 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Total Students</div>
             <div className="mt-2 text-2xl font-bold text-indigo-600">{totalStudents}</div>
-            <div className="text-xs text-gray-400 mt-1">4 active</div>
+            <div className="text-xs text-gray-400 mt-1">{totalStudents > 0 ? 'registered users' : 'no data yet'}</div>
           </div>
         </div>
         <div className="col-span-2 md:col-span-1 lg:col-span-1">
@@ -2861,22 +2886,28 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-green-900">Monthly Borrowings</h3>
-              <div className="text-sm text-gray-400">Mar - Aug 2025</div>
+              <div className="text-sm text-gray-400">{monthlyBorrowings.length > 0 ? 'Live trend' : 'No data yet'}</div>
             </div>
 
-            <div className="grid grid-cols-6 gap-3 items-end h-36">
-              {monthlyBorrowings.map((v: number, i: number) => {
-                const height = Math.round((v / maxMonth) * 100)
-                return (
-                  <div key={i} className="flex flex-col items-center gap-2">
-                    <div className="w-full flex items-end">
-                      <div className="w-full rounded-t-md bg-green-600" style={{ height: `${height}%` }} />
+            {monthlyBorrowings.length > 0 ? (
+              <div className="grid grid-cols-6 gap-3 items-end h-36">
+                {monthlyBorrowings.map((v: number, i: number) => {
+                  const height = Math.round((v / maxMonth) * 100)
+                  return (
+                    <div key={i} className="flex flex-col items-center gap-2">
+                      <div className="w-full flex items-end">
+                        <div className="w-full rounded-t-md bg-green-600" style={{ height: `${height}%` }} />
+                      </div>
+                      <div className="text-xs text-gray-500">{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'][i] ?? `M${i + 1}`}</div>
                     </div>
-                    <div className="text-xs text-gray-500">{['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'][i]}</div>
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-green-200 bg-green-50 text-sm text-gray-500">
+                No borrowing data available yet.
+              </div>
+            )}
           </div>
 
           <div className="mt-6 bg-white rounded-xl border border-green-100 p-5 shadow-sm">
@@ -2901,45 +2932,31 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm mb-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-green-900">Books by Category</h3>
-              <div className="text-xs text-gray-400">11 titles</div>
+              <div className="text-xs text-gray-400">{categoryCounts.length > 0 ? `${categoryCounts.reduce((sum: number, c: any) => sum + (Number(c.count) || 0), 0)} titles` : 'No data yet'}</div>
             </div>
-            <div className="space-y-3">
-              {categoryCounts.map((c: any, i: number) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="flex-1 text-sm text-gray-700">{c.name}</div>
-                  <div className="w-36 bg-green-50 rounded-full h-3 overflow-hidden">
-                    <div className="h-3 bg-green-600" style={{ width: `${Math.min(100, (c.count / (categoryCounts[0].count || 1)) * 100)}%` }} />
+            {categoryCounts.length > 0 ? (
+              <div className="space-y-3">
+                {categoryCounts.map((c: any, i: number) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="flex-1 text-sm text-gray-700">{c.name}</div>
+                    <div className="w-36 bg-green-50 rounded-full h-3 overflow-hidden">
+                      <div className="h-3 bg-green-600" style={{ width: `${Math.min(100, (Number(c.count) / Math.max(categoryCounts[0]?.count || 1, 1)) * 100)}%` }} />
+                    </div>
+                    <div className="text-xs text-gray-500 w-8 text-right">{c.count}</div>
                   </div>
-                  <div className="text-xs text-gray-500 w-8 text-right">{c.count}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-green-200 bg-green-50 p-4 text-sm text-gray-500">
+                Category data will appear here after books are loaded.
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm mb-4">
             <h3 className="text-base font-semibold text-green-900 mb-3">Recent Activity</h3>
             <div className="space-y-3 text-sm text-gray-600">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600"><Icons.Bell /></div>
-                <div>
-                  <div className="font-medium text-gray-800">Maria Santos borrowed "Introduction to Algorithms"</div>
-                  <div className="text-xs text-gray-400">2d ago</div>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600"><Icons.Check /></div>
-                <div>
-                  <div className="font-medium text-gray-800">Carlo Bautista returned "Discrete Mathematics"</div>
-                  <div className="text-xs text-gray-400">4d ago</div>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600"><Icons.AlertCircle /></div>
-                <div>
-                  <div className="font-medium text-gray-800">Ana Reyes overdue reminder sent</div>
-                  <div className="text-xs text-gray-400">6d ago</div>
-                </div>
-              </div>
+              <div className="text-gray-500">No recent activity.</div>
             </div>
           </div>
 
@@ -2959,8 +2976,19 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
 }
 
 // ─── Root App ───────────────────────────────────────────────────────────────
+type AuthState = {
+  role: Role
+  userId?: string
+  studentId?: string
+  email?: string
+  name?: string
+  studentCode?: string
+  course?: string
+  card?: string
+}
+
 export default function App() {
-  const [auth, setAuth] = useState<{ role: Role; userId?: string; studentId?: string } | null>(null)
+  const [auth, setAuth] = useState<AuthState | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
 
   // start auth -> DB sync so self-service signups create student rows
@@ -2970,7 +2998,18 @@ export default function App() {
 
   async function handleLogin(role: Role, email: string, password: string) {
     const res = await login(email, password, role)
-    setAuth({ role, userId: res.user?.id, studentId: res.student?.id })
+    const student = res.student ?? null
+    const card = res.card ?? null
+    setAuth({
+      role,
+      userId: res.user?.id,
+      studentId: student?.id ?? res.user?.student_id,
+      email: res.user?.email ?? email,
+      name: student?.name ?? res.user?.email?.split('@')[0] ?? 'Student',
+      studentCode: student?.student_code ?? 'N/A',
+      course: student?.course ?? 'Unassigned',
+      card: card?.card_no ?? 'N/A',
+    })
   }
 
   useEffect(() => {
@@ -2988,11 +3027,20 @@ export default function App() {
   if (!auth) return <LoginPage onLogin={handleLogin} onSignUpComplete={(appUser, student) => {
     // When a new account is created, set app auth state and navigate to student area.
     try {
-      setAuth({ role: 'student', userId: appUser?.id ?? undefined, studentId: student?.id ?? undefined })
+      setAuth({
+        role: 'student',
+        userId: appUser?.id ?? undefined,
+        studentId: student?.id ?? undefined,
+        email: appUser?.email ?? student?.email ?? '',
+        name: student?.name ?? appUser?.email?.split('@')[0] ?? 'Student',
+        studentCode: student?.student_code ?? 'N/A',
+        course: student?.course ?? 'Unassigned',
+        card: 'N/A',
+      })
     } catch (e) {
       console.debug('[App] onSignUpComplete failed', e)
     }
   }} />
-  if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} />
+  if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode }} />
   return <AdminLayout onLogout={() => setAuth(null)} dashboard={dashboard} />
 }

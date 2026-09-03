@@ -16,27 +16,12 @@ import { supabase } from '../supabaseClient'
 const STORAGE_KEY = 'lms_mock_data_v1'
 
 const defaultLibraryState = {
-    books: [
-        { id: 'BK-001', book_code: 'BK-001', title: 'Introduction to Algorithms', author: 'Cormen, Leiserson, Rivest', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 3, available: 2 },
-        { id: 'BK-002', book_code: 'BK-002', title: 'The Art of Computer Programming', author: 'Donald E. Knuth', category: 'Q - Science (Mathematics, physics, chemistry, biology)', copies: 2, available: 0 },
-        { id: 'BK-003', book_code: 'BK-003', title: 'Clean Code', author: 'Robert C. Martin', category: 'T - Technology and Engineering', copies: 4, available: 3 },
-        { id: 'BK-004', book_code: 'BK-004', title: 'Design Patterns', author: 'Gang of Four', category: 'T - Technology and Engineering', copies: 2, available: 1 },
-    ] as Book[],
-    students: [
-        { id: 'STU-2021-001', student_code: 'STU-2021-001', name: 'Maria Santos', email: 'maria.santos@college.edu', course: 'BSCS', status: 'active' },
-        { id: 'STU-2021-002', student_code: 'STU-2021-002', name: 'Juan dela Cruz', email: 'juan.delacruz@college.edu', course: 'BSIT', status: 'active' },
-    ] as Student[],
-    app_users: [
-        { id: crypto.randomUUID(), email: 'maria.santos@college.edu', password: 'user123', role: 'student', student_id: 'STU-2021-001' },
-        { id: crypto.randomUUID(), email: 'juan.delacruz@college.edu', password: 'user123', role: 'student', student_id: 'STU-2021-002' },
-        { id: crypto.randomUUID(), email: 'librarian@college.edu', password: 'admin123', role: 'admin', student_id: null },
-    ],
-    library_cards: [
-        { id: crypto.randomUUID(), card_no: 'LC-0042', student_id: 'STU-2021-001', issue_date: '2025-08-01', expiry_date: '2026-08-01', status: 'active' },
-        { id: crypto.randomUUID(), card_no: 'LC-0043', student_id: 'STU-2021-002', issue_date: '2025-08-01', expiry_date: '2026-08-01', status: 'active' },
-    ],
-    borrowing_records: [],
-    settings: { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' }
+    books: [] as Book[],
+    students: [] as Student[],
+    app_users: [] as any[],
+    library_cards: [] as any[],
+    borrowing_records: [] as any[],
+    settings: { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'admin@library.local' }
 }
 
 function ensureSeedUsers(data: any) {
@@ -198,7 +183,7 @@ export async function fetchStudents() {
 }
 
 export async function fetchLibraryCards() { return CARDS }
-export async function fetchSettings() { return { id: 1, library_name: 'Greenfield College Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'librarian@college.edu' } as Settings }
+export async function fetchSettings() { return { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'admin@library.local' } as Settings }
 export async function fetchAllBorrowingRecords() { return [] as BorrowingRecordWithDetails[] }
 export async function fetchStudentBorrowingRecords(_studentId: string) { return [] as BorrowingRecordWithDetails[] }
 export async function fetchActiveBorrowingRecords() { return [] as BorrowingRecordWithDetails[] }
@@ -356,9 +341,14 @@ export async function updateLibraryCard(id: string, updates: Partial<LibraryCard
 export async function deleteLibraryCard(id: string) { const i = CARDS.findIndex(c => c.id === id); if (i >= 0) { CARDS.splice(i, 1); saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS }) } }
 export async function borrowBook(studentId: string, bookId: string, borrowPeriodDays = 14) {
     const student = STUDENTS.find((s) => s.id === studentId || s.student_code === studentId)
-    const book = BOOKS.find((b) => b.id === bookId || b.book_code === bookId)
+    const book = BOOKS.find((b) =>
+        b.id === bookId ||
+        b.book_code === bookId ||
+        (b.isbn && b.isbn === bookId) ||
+        (typeof bookId === 'string' && b.title && b.title.toLowerCase() === bookId.toLowerCase())
+    )
     if (!student) throw new Error('Student not found')
-    if (!book) throw new Error('Book not found')
+    if (!book) throw new Error(`Book not found: ${bookId}`)
     if ((book.available ?? 0) <= 0) throw new Error('Book is not available')
 
     const maxBooks = SETTINGS?.max_books_per_student ?? 3

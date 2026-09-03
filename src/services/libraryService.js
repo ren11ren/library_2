@@ -80,13 +80,18 @@ export async function borrowBook(bookId) {
         throw new Error('This book is currently unavailable.')
     }
 
-    const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+    // use date-only strings (YYYY-MM-DD) to keep consistency with UI and mock data
+    const borrowDate = new Date()
+    const due = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+    const borrowDateStr = borrowDate.toISOString().slice(0, 10)
+    const dueDateStr = due.toISOString().slice(0, 10)
 
     const { error } = await supabase.from('borrow_records').insert([
         {
             user_id: userData.user.id,
             book_id: bookId,
-            due_date: dueDate,
+            borrow_date: borrowDateStr,
+            due_date: dueDateStr,
             status: 'borrowed',
         },
     ])
@@ -101,9 +106,12 @@ export async function borrowBook(bookId) {
         throw new Error(bookErr.message)
     }
     if (bookRow) {
-        const next = Math.max(Number(bookRow.available_copies ?? 0) - 1, 0)
+        const current = Number(bookRow.available_copies ?? 0)
+        console.debug('[libraryService] borrowBook - current available_copies', { bookId, current })
+        const next = Math.max(current - 1, 0)
         const { error: upErr } = await supabase.from('books').update({ available_copies: next }).eq('id', bookId)
         if (upErr) throw new Error(upErr.message)
+        console.debug('[libraryService] borrowBook - updated available_copies', { bookId, next })
     }
 
     return true
@@ -120,10 +128,11 @@ export async function returnBook(recordId) {
         throw new Error('Please sign in first to return a book.')
     }
 
+    const returnDateStr = new Date().toISOString().slice(0, 10)
     const { data: updatedRecord, error } = await supabase
         .from('borrow_records')
         .update({
-            return_date: new Date().toISOString(),
+            return_date: returnDateStr,
             status: 'returned',
         })
         .eq('id', recordId)
@@ -141,9 +150,11 @@ export async function returnBook(recordId) {
         const { data: bookRow, error: bookErr } = await supabase.from('books').select('available_copies').eq('id', bookId).maybeSingle()
         if (bookErr) throw new Error(bookErr.message)
         if (bookRow) {
-            const next = Number(bookRow.available_copies ?? 0) + 1
+            const current = Number(bookRow.available_copies ?? 0)
+            const next = current + 1
             const { error: upErr } = await supabase.from('books').update({ available_copies: next }).eq('id', bookId)
             if (upErr) throw new Error(upErr.message)
+            console.debug('[libraryService] returnBook - adjusted available_copies', { bookId, before: current, after: next })
         }
     }
 
