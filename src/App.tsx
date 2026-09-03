@@ -32,6 +32,15 @@ function buildStudentEmailFromCode(value: string): string {
   return `${code.replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`
 }
 
+async function hashPassword(value: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+    return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  return value
+}
+
 type StudentView =
   | 'dashboard'
   | 'search'
@@ -288,7 +297,7 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
 }
 
 // ─── Login Page ────────────────────────────────────────────────────────────────
-function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email: string, password: string) => Promise<void>; onSignUpComplete?: (appUser: any, student: any) => void }) {
+function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password: string) => Promise<void> }) {
   const [role, setRole] = useState<Role>('student')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -297,6 +306,8 @@ function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email:
   const [showSignup, setShowSignup] = useState(false)
   const [name, setName] = useState('')
   const [studentId, setStudentId] = useState('')
+  const [course, setCourse] = useState('')
+  const [yearLevel, setYearLevel] = useState('')
   const [confirm, setConfirm] = useState('')
   const [info, setInfo] = useState<string | null>(null)
 
@@ -314,6 +325,14 @@ function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email:
               <input value={studentId} onChange={(e) => setStudentId(e.target.value)} placeholder="STU-2021-001" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Course</label>
+              <input value={course} onChange={(e) => setCourse(e.target.value)} placeholder="BSIT" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Level</label>
+              <input value={yearLevel} onChange={(e) => setYearLevel(e.target.value)} placeholder="1st Year" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
             </div>
@@ -328,67 +347,52 @@ function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email:
                   setError(null)
                   setInfo(null)
                   const normalizedStudentId = studentId.trim()
-                  if (!name || !normalizedStudentId || !password) return setError('Name, student ID, and password are required')
+                  if (!name || !normalizedStudentId || !course || !yearLevel || !password) return setError('Name, student ID, course, year level, and password are required')
                   if (password !== confirm) return setError('Passwords do not match')
                   setLoading(true)
                   try {
-                      const studentCode = normalizeStudentCode(normalizedStudentId)
+                    const studentCode = normalizeStudentCode(normalizedStudentId)
                     const internalEmail = buildStudentEmailFromCode(studentCode)
+                    const passwordHash = await hashPassword(password)
 
-                    const res = await (supabase.auth as any).signUp({ email: internalEmail, password }, { data: { full_name: name, student_id: studentCode } })
-                    if (res.error) {
-                      setError(res.error.message ?? JSON.stringify(res.error))
-                      return
-                    }
-
-                    const user = (res as any).data?.user ?? (res as any).user ?? null
-
-                    // Create profile rows (`students`, `app_users`). Collect any upsert errors.
+                    // Create the student profile and login account directly in the app's custom tables.
+                    // This avoids the fake-email Supabase Auth issue that requires email confirmation.
                     const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `id-${Date.now()}`
-                    const studentPayload = { id, student_code: studentCode, name, email: internalEmail, course: 'Undeclared', status: 'active' }
+                    const studentPayload = { id, student_code: studentCode, name, email: internalEmail, course, year_level: yearLevel, status: 'active' }
 
                     const upsertErrors: string[] = []
                     const { data: sData, error: sErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' }).select().maybeSingle()
                     if (sErr) upsertErrors.push(sErr.message ?? JSON.stringify(sErr))
 
-                    const appUserId = (user?.id) ?? ((typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `app-user-${Date.now()}`)
-                    const appUser = { id: appUserId, email: internalEmail, password, role: 'student', student_id: id }
-                    const { data: aData, error: aErr } = await supabase.from('app_users').upsert([appUser], { onConflict: 'email' }).select().maybeSingle()
-                    if (aErr) upsertErrors.push(aErr.message ?? JSON.stringify(aErr))
+                    const loginAccountPayload = {
+                      student_id: studentCode,
+                      student_code: studentCode,
+                      full_name: name,
+                      course,
+                      year_level: yearLevel,
+                      password_hash: passwordHash,
+                      status: 'active',
+                    }
+                    const { data: loginRow, error: loginErr } = await supabase.from('student_login_accounts').upsert([loginAccountPayload], { onConflict: 'student_id' }).select().maybeSingle()
+                    if (loginErr) upsertErrors.push(loginErr.message ?? JSON.stringify(loginErr))
 
                     if (upsertErrors.length > 0) {
                       console.error('[signup] upsert errors', upsertErrors)
-                      setError(`Account created in Auth but profile creation failed: ${upsertErrors.join('; ')}`)
-                      if (!user) setInfo('Check your email to confirm your account before signing in.')
+                      setError(`Account creation failed: ${upsertErrors.join('; ')}`)
                       return
                     }
 
-                    // If we have created profile rows, call the optional onSignUpComplete callback
-                    if (onSignUpComplete && (aData || sData)) {
-                      try { onSignUpComplete(aData ?? null, sData ?? null) } catch (e) { console.debug('[signup] onSignUpComplete handler failed', e) }
-                    }
-
-                    if (!user) {
-                      setInfo('Account created. Check your email to confirm and then sign in.')
-                    } else {
-                      setInfo('Account created. You can sign in now.')
-                    }
-
-                    // Attempt to sign in and navigate into the app automatically.
-                    try {
-                      await onLogin('student', studentCode, password)
-                    } catch (loginErr: any) {
-                      // If auto-login fails, show a non-blocking message and keep the user on sign-in screen.
-                      console.debug('[signup] auto-login failed', loginErr)
-                      setInfo((prev) => (prev ? prev + ' Auto sign-in failed.' : 'Auto sign-in failed.'))
-                    }
-
                     setShowSignup(false)
+                    setError(null)
+                    setInfo('Account created. Please sign in with your student ID number.')
                     setEmail('')
                     setPassword('')
                     setConfirm('')
                     setName('')
                     setStudentId('')
+                    setCourse('')
+                    setYearLevel('')
+                    setRole('student')
                   } catch (err: any) {
                     setError(err?.message ?? 'Sign up failed')
                   } finally {
@@ -435,6 +439,7 @@ function LoginPage({ onLogin, onSignUpComplete }: { onLogin: (role: Role, email:
 
               {/* Form */}
               <div className="flex flex-col gap-4">
+                {info && <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{info}</div>}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     {role === 'student' ? 'Student ID Number' : 'Email'}
@@ -856,23 +861,7 @@ function SearchBooks({ studentId }: { studentId?: string }) {
     try {
       setBusy(true)
       setError(null)
-      // If the Supabase client has an authenticated user, use the Supabase-backed borrow flow.
-      // Otherwise, call the local mock directly using the book's ISBN or id so the mock can find it.
-      try {
-        const { data: authData } = await supabase.auth.getUser()
-        if (authData?.user) {
-          await borrowBook(studentId, borrowModal.id)
-        } else {
-          const { borrowBook: mockBorrow } = await import('./lib/mockApi')
-          const identifier = borrowModal.isbn || borrowModal.book_code || borrowModal.id
-          await mockBorrow(studentId as string, identifier)
-        }
-      } catch (innerErr) {
-        // If anything goes wrong checking auth, fall back to mock borrow.
-        const { borrowBook: mockBorrow } = await import('./lib/mockApi')
-        const identifier = borrowModal.isbn || borrowModal.book_code || borrowModal.id
-        await mockBorrow(studentId as string, identifier)
-      }
+      await borrowBook(studentId, borrowModal.id)
       setConfirmed(true)
     } catch (e: any) {
       setError(e?.message || 'Unable to borrow this book right now.')
@@ -2143,31 +2132,69 @@ function AdminStudents() {
 }
 
 function AdminUsers() {
-  const { data: usersRt } = useSupabaseRealtime('app_users')
+  const { data: usersRt } = useSupabaseRealtime('student_login_accounts')
   const [users, setUsers] = useState(() => [])
   const [studentMap, setStudentMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    if (!usersRt) return
+    const syncUsers = async () => {
+      try {
+        const { data: rows, error } = await supabase.from('student_login_accounts').select('*')
+        if (error) {
+          console.error('[AdminUsers] direct fetch failed', error)
+          return
+        }
+
+        const mapped = (rows ?? []).map((u: any) => ({
+          id: u.id,
+          email: u.student_id ?? u.student_code ?? '',
+          password: u.password_hash ?? '',
+          role: 'student',
+          studentId: u.student_id ?? null,
+          studentCode: u.student_code ?? null,
+          fullName: u.full_name ?? '',
+          course: u.course ?? '',
+          yearLevel: u.year_level ?? '',
+          status: u.status ?? 'active',
+        }))
+
+        setUsers(mapped)
+      } catch (err) {
+        console.error('[AdminUsers] direct fetch error', err)
+      }
+    }
+
+    syncUsers()
+  }, [])
+
+  useEffect(() => {
+    if (!usersRt || usersRt.length === 0) return
+
     const mapped = (usersRt ?? []).map((u: any) => ({
       id: u.id,
-      email: u.email ?? '',
-      password: u.password ?? '',
-      role: u.role ?? '',
-      studentId: u.student_id ?? null,
+      email: u.studentId ?? u.studentCode ?? '',
+      password: u.passwordHash ?? '',
+      role: 'student',
+      studentId: u.studentId ?? null,
+      studentCode: u.studentCode ?? null,
+      fullName: u.fullName ?? '',
+      course: u.course ?? '',
+      yearLevel: u.yearLevel ?? '',
+      status: u.status ?? 'active',
     }))
+
     setUsers(mapped)
   }, [usersRt])
 
-  // Fetch student codes for linked student IDs so we can display a nicer id (e.g. student_code)
+  // Fetch the real student codes for the linked student records so the table can display the correct values
   useEffect(() => {
-    const ids = users.filter((u: any) => u.studentId).map((u: any) => u.studentId)
-    if (!ids || ids.length === 0) return setStudentMap({})
+    const studentCodes = users.filter((u: any) => u.studentCode).map((u: any) => u.studentCode)
+    if (!studentCodes || studentCodes.length === 0) return setStudentMap({})
 
     let cancelled = false
       ; (async () => {
         try {
-          const { data: rows, error } = await supabase.from('students').select('id, student_code').in('id', ids)
+          const { data: rows, error } = await supabase.from('students').select('student_code, id').in('student_code', studentCodes)
           if (error) {
             console.debug('[AdminUsers] failed to fetch students', error)
             return
@@ -2175,9 +2202,8 @@ function AdminUsers() {
           if (cancelled) return
           const map: Record<string, string> = {}
           for (const r of rows ?? []) {
-            // strip 'STU-' prefix if present for cleaner display
             const code = (r.student_code || '')
-            map[r.id] = code.startsWith('STU-') ? code.replace(/^STU-/, '') : code
+            map[code] = code
           }
           setStudentMap(map)
         } catch (e) {
@@ -2189,16 +2215,18 @@ function AdminUsers() {
 
   return (
     <div>
-      <PageHeader title="Users" subtitle="Application users (app_users table)" />
+      <PageHeader title="Users" subtitle="Student login accounts (student_login_accounts table)" />
       <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
-        <Table headers={["ID", "Email", "Password", "Role", "Student ID"]}>
+        <Table headers={["Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Status"]}>
           {users.map((u: any) => (
             <Tr key={u.id}>
-              <Td className="font-mono text-xs">{u.studentId ? (studentMap[u.studentId] ?? u.studentId) : u.id}</Td>
-              <Td>{u.email}</Td>
-              <Td className="text-sm text-gray-500">{u.password}</Td>
-              <Td>{u.role}</Td>
+              <Td className="font-mono text-xs">{u.id}</Td>
+              <Td>{u.fullName || '—'}</Td>
               <Td className="font-mono text-xs">{u.studentId ?? 'NULL'}</Td>
+              <Td className="font-mono text-xs">{u.studentCode ? (studentMap[u.studentCode] ?? u.studentCode) : 'NULL'}</Td>
+              <Td>{u.course || '—'}</Td>
+              <Td>{u.yearLevel || '—'}</Td>
+              <Td><StatusBadge status={u.status || 'active'} /></Td>
             </Tr>
           ))}
         </Table>
@@ -3000,14 +3028,17 @@ export default function App() {
     const res = await login(email, password, role)
     const student = res.student ?? null
     const card = res.card ?? null
+    const effectiveStudentCode = student?.student_code ?? res.user?.student_code ?? res.user?.student_id ?? email
+    const effectiveStudentId = student?.student_code ?? student?.id ?? res.user?.student_code ?? res.user?.student_id ?? email
+
     setAuth({
       role,
       userId: res.user?.id,
-      studentId: student?.id ?? res.user?.student_id,
+      studentId: effectiveStudentId,
       email: res.user?.email ?? email,
-      name: student?.name ?? res.user?.email?.split('@')[0] ?? 'Student',
-      studentCode: student?.student_code ?? 'N/A',
-      course: student?.course ?? 'Unassigned',
+      name: student?.name ?? res.user?.full_name ?? res.user?.email?.split('@')[0] ?? 'Student',
+      studentCode: student?.student_code ?? res.user?.student_code ?? 'N/A',
+      course: student?.course ?? res.user?.course ?? 'Unassigned',
       card: card?.card_no ?? 'N/A',
     })
   }
@@ -3024,23 +3055,7 @@ export default function App() {
     }
   }, [auth])
 
-  if (!auth) return <LoginPage onLogin={handleLogin} onSignUpComplete={(appUser, student) => {
-    // When a new account is created, set app auth state and navigate to student area.
-    try {
-      setAuth({
-        role: 'student',
-        userId: appUser?.id ?? undefined,
-        studentId: student?.id ?? undefined,
-        email: appUser?.email ?? student?.email ?? '',
-        name: student?.name ?? appUser?.email?.split('@')[0] ?? 'Student',
-        studentCode: student?.student_code ?? 'N/A',
-        course: student?.course ?? 'Unassigned',
-        card: 'N/A',
-      })
-    } catch (e) {
-      console.debug('[App] onSignUpComplete failed', e)
-    }
-  }} />
+  if (!auth) return <LoginPage onLogin={handleLogin} />
   if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode }} />
   return <AdminLayout onLogout={() => setAuth(null)} dashboard={dashboard} />
 }

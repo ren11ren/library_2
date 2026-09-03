@@ -110,6 +110,25 @@ CREATE TABLE IF NOT EXISTS public.students (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.student_login_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  student_id TEXT UNIQUE NOT NULL,
+  student_code TEXT UNIQUE,
+  full_name TEXT NOT NULL,
+  course TEXT NOT NULL,
+  year_level TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_student_login_accounts_student_id
+ON public.student_login_accounts (student_id);
+
+CREATE INDEX IF NOT EXISTS idx_student_login_accounts_student_code
+ON public.student_login_accounts (student_code);
+
 CREATE TABLE IF NOT EXISTS public.library_cards (
   id UUID PRIMARY KEY,
   card_no TEXT UNIQUE NOT NULL,
@@ -156,6 +175,7 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.borrow_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.student_login_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.library_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.borrowing_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
@@ -239,6 +259,25 @@ WITH CHECK (true);
 DROP POLICY IF EXISTS "Students are updatable by everyone" ON public.students;
 CREATE POLICY "Students are updatable by everyone"
 ON public.students
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Student login accounts are viewable by everyone" ON public.student_login_accounts;
+CREATE POLICY "Student login accounts are viewable by everyone"
+ON public.student_login_accounts
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Student login accounts are writable by everyone" ON public.student_login_accounts;
+CREATE POLICY "Student login accounts are writable by everyone"
+ON public.student_login_accounts
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Student login accounts are updatable by everyone" ON public.student_login_accounts;
+CREATE POLICY "Student login accounts are updatable by everyone"
+ON public.student_login_accounts
 FOR UPDATE
 USING (true)
 WITH CHECK (true);
@@ -339,7 +378,7 @@ VALUES
   ('11111111-1111-1111-1111-444444444444','STU-2023-008','Carlo Bautista','carlo.bautista@college.edu','BSECE','2nd Year','active','2025-06-01T00:00:00Z'),
   ('11111111-1111-1111-1111-555555555555','STU-2023-019','Lena Villanueva','lena.villanueva@college.edu','BSME','2nd Year','active','2025-07-01T00:00:00Z')
 ON CONFLICT (id) DO NOTHING;
-
+---------
 INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
 VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','maria.santos@college.edu','user123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),

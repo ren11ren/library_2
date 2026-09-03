@@ -3,8 +3,15 @@ import { createClient } from '@supabase/supabase-js'
 const defaultSupabaseUrl = 'https://qkmctldmikpkgzuyphig.supabase.co'
 const defaultSupabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFrbWN0bGRtaWtwa2d6dXlwaGlnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0Nzc2NjcsImV4cCI6MjEwMzA1MzY2N30.0Xz9sgKpFkFF4w82eCfBvAaIDImzFrV2YB2KcOLgfU4'
 
-const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || defaultSupabaseUrl
-const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || defaultSupabaseAnonKey
+const envSupabaseUrl = import.meta.env?.VITE_SUPABASE_URL?.trim()
+const envSupabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY?.trim()
+
+const supabaseUrl = envSupabaseUrl || defaultSupabaseUrl
+const supabaseAnonKey = envSupabaseAnonKey || defaultSupabaseAnonKey
+
+if (!envSupabaseUrl || !envSupabaseAnonKey) {
+    console.warn('[supabase] Using fallback project credentials because VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is missing.')
+}
 
 // Create a Supabase client with realtime and auth options suitable for a SPA.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -82,18 +89,35 @@ export function startAuthSync() {
                         console.error('[auth-sync] error inserting student', insErr)
                     } else {
                         console.debug('[auth-sync] student created', ins)
-                        const appUser = {
-                            id: user.id ?? ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `app-user-${Date.now()}`),
-                            email: derivedEmail,
-                            role: 'student',
-                            student_id: id,
+                        const loginAccount = {
+                            student_id: normalizedStudentCode ?? `STU-${Date.now()}`,
+                            student_code: normalizedStudentCode ?? `STU-${Date.now()}`,
+                            full_name: name,
+                            course: existing?.course ?? 'Undeclared',
+                            year_level: existing?.year_level ?? '1st Year',
+                            password_hash: user.id ?? 'auth-user',
+                            status: 'active',
                         }
-                        const { error: appErr } = await supabase.from('app_users').upsert(appUser, { onConflict: 'email' })
-                        if (appErr) console.error('[auth-sync] app_user upsert error', appErr)
+                        const { error: loginErr } = await supabase.from('student_login_accounts').upsert(loginAccount, { onConflict: 'student_id' })
+                        if (loginErr) console.error('[auth-sync] student_login_accounts upsert error', loginErr)
                     }
                 } else if (normalizedStudentCode && existing.email !== derivedEmail) {
                     await supabase.from('students').update({ email: derivedEmail }).eq('id', existing.id)
-                    await supabase.from('app_users').update({ email: derivedEmail }).eq('student_id', existing.id)
+
+                    const { data: loginRow } = await supabase
+                        .from('student_login_accounts')
+                        .select('*')
+                        .eq('student_code', normalizedStudentCode)
+                        .maybeSingle()
+
+                    if (loginRow) {
+                        await supabase.from('student_login_accounts').update({
+                            full_name: existing.name,
+                            course: existing.course ?? 'Undeclared',
+                            year_level: existing.year_level ?? '1st Year',
+                            student_code: normalizedStudentCode,
+                        }).eq('student_id', normalizedStudentCode)
+                    }
                 }
             }
         } catch (err) {
