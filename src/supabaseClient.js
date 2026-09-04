@@ -42,8 +42,9 @@ export function mapKeysToCamel(obj) {
 export default supabase
 
 function normalizeStudentCode(value) {
-    const cleaned = String(value ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')
-    return cleaned.startsWith('STU-') ? cleaned : `STU-${cleaned}`
+    const cleaned = String(value ?? '').trim().replace(/[^A-Za-z0-9-]/g, '').toUpperCase()
+    const withoutPrefix = cleaned.replace(/^STU-?/i, '')
+    return withoutPrefix ? `STU-${withoutPrefix}` : 'STU'
 }
 
 function buildStudentEmailFromCode(value) {
@@ -51,77 +52,9 @@ function buildStudentEmailFromCode(value) {
     return `${code.replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`
 }
 
-// Initialize auth -> DB sync: when a user signs in for the first time,
-// ensure a corresponding `students` row exists and an `app_users` entry.
+// The custom student login flow is the source of truth for this app.
+// The legacy `students` and `library_cards` tables are not available in the live project,
+// so the auth sync must not query them.
 export function startAuthSync() {
-    supabase.auth.onAuthStateChange(async (event, session) => {
-        try {
-            console.debug('[auth] event', event)
-            const user = session?.user
-            if (!user || !user.email) return
-
-            if (event === 'SIGNED_IN') {
-                const studentCode = user.user_metadata?.student_id || user.user_metadata?.studentCode || null
-                const normalizedStudentCode = studentCode ? normalizeStudentCode(studentCode) : null
-                const derivedEmail = normalizedStudentCode ? buildStudentEmailFromCode(normalizedStudentCode) : user.email
-
-                const lookupKey = normalizedStudentCode ? 'student_code' : 'email'
-                const lookupValue = normalizedStudentCode ?? user.email
-                const { data: existing, error: fetchErr } = await supabase.from('students').select('*').eq(lookupKey, lookupValue).maybeSingle()
-                if (fetchErr) {
-                    console.error('[auth-sync] error fetching student', fetchErr)
-                    return
-                }
-                if (!existing) {
-                    const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `id-${Date.now()}`
-                    const name = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || user.email.split('@')[0]
-                    const studentPayload = {
-                        id,
-                        student_code: normalizedStudentCode ?? `STU-${Date.now()}`,
-                        name,
-                        email: derivedEmail,
-                        course: 'Undeclared',
-                        status: 'active',
-                    }
-                    console.debug('[auth-sync] creating student row', studentPayload)
-                    const { data: ins, error: insErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' }).select().maybeSingle()
-                    if (insErr) {
-                        console.error('[auth-sync] error inserting student', insErr)
-                    } else {
-                        console.debug('[auth-sync] student created', ins)
-                        const loginAccount = {
-                            student_id: normalizedStudentCode ?? `STU-${Date.now()}`,
-                            student_code: normalizedStudentCode ?? `STU-${Date.now()}`,
-                            full_name: name,
-                            course: existing?.course ?? 'Undeclared',
-                            year_level: existing?.year_level ?? '1st Year',
-                            password_hash: user.id ?? 'auth-user',
-                            status: 'active',
-                        }
-                        const { error: loginErr } = await supabase.from('student_login_accounts').upsert(loginAccount, { onConflict: 'student_id' })
-                        if (loginErr) console.error('[auth-sync] student_login_accounts upsert error', loginErr)
-                    }
-                } else if (normalizedStudentCode && existing.email !== derivedEmail) {
-                    await supabase.from('students').update({ email: derivedEmail }).eq('id', existing.id)
-
-                    const { data: loginRow } = await supabase
-                        .from('student_login_accounts')
-                        .select('*')
-                        .eq('student_code', normalizedStudentCode)
-                        .maybeSingle()
-
-                    if (loginRow) {
-                        await supabase.from('student_login_accounts').update({
-                            full_name: existing.name,
-                            course: existing.course ?? 'Undeclared',
-                            year_level: existing.year_level ?? '1st Year',
-                            student_code: normalizedStudentCode,
-                        }).eq('student_id', normalizedStudentCode)
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('[auth-sync] unexpected error', err)
-        }
-    })
+    console.debug('[auth-sync] disabled: using student_login_accounts only')
 }

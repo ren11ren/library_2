@@ -142,13 +142,27 @@ function mapBookRow(row: any): Book {
 }
 
 function mapStudentRow(row: any): Student {
+    const studentCode = row.student_code ?? row.student_id ?? row.id ?? crypto.randomUUID()
     return {
         ...row,
-        id: row.id ?? row.student_code ?? crypto.randomUUID(),
-        student_code: row.student_code ?? row.id ?? crypto.randomUUID(),
-        name: row.name,
-        email: row.email,
-        course: row.course,
+        id: row.id ?? row.student_code ?? row.student_id ?? crypto.randomUUID(),
+        student_code: studentCode,
+        name: row.name ?? row.full_name ?? 'Student',
+        email: row.email ?? `${String(studentCode).replace(/^STU-/i, '').toLowerCase()}@sjbcnl.local`,
+        course: row.course ?? 'Unassigned',
+        year_level: row.year_level ?? null,
+        status: row.status ?? 'active',
+    } as Student
+}
+
+function mapLoginRowToStudent(row: any): Student {
+    const studentCode = row.student_code ?? row.student_id ?? row.id ?? crypto.randomUUID()
+    return {
+        id: row.id ?? studentCode,
+        student_code: studentCode,
+        name: row.full_name ?? 'Student',
+        email: `${String(studentCode).replace(/^STU-/i, '').toLowerCase()}@sjbcnl.local`,
+        course: row.course ?? 'Unassigned',
         year_level: row.year_level ?? null,
         status: row.status ?? 'active',
     } as Student
@@ -170,9 +184,9 @@ export async function fetchBooks() {
 
 export async function fetchStudents() {
     try {
-        const { data, error } = await supabase.from('students').select('*').order('created_at', { ascending: false })
+        const { data, error } = await supabase.from('student_login_accounts').select('*').order('created_at', { ascending: false })
         if (!error && data) {
-            const mapped = data.map(mapStudentRow)
+            const mapped = data.map(mapLoginRowToStudent)
             saveMockData({ books: BOOKS, students: mapped, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
             return mapped
         }
@@ -254,21 +268,28 @@ export async function deleteBook(id: string) {
     }
 }
 export async function upsertStudent(student: Partial<Student> & Pick<Student, 'student_code' | 'name' | 'email' | 'course'>) {
+    const normalizedStudentCode = String(student.student_code ?? student.email ?? '').trim() || `STU-${Date.now()}`
+    const suppliedPasswordHash = String((student as any).password_hash ?? '').trim()
+    if (!suppliedPasswordHash) {
+        throw new Error('Student password is required when creating a login account.')
+    }
+
     const payload = {
         id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
-        student_code: student.student_code,
-        name: student.name,
-        email: student.email,
+        student_id: normalizedStudentCode,
+        student_code: normalizedStudentCode,
+        full_name: student.name,
         course: student.course,
-        year_level: (student as any).year_level ?? null,
+        year_level: (student as any).year_level ?? '1st Year',
         status: (student as any).status ?? 'active',
+        password_hash: suppliedPasswordHash,
     }
 
     try {
         console.debug('[supabase] upsertStudent payload', payload)
         const { data, error } = await supabase
-            .from('students')
-            .upsert(payload, { onConflict: 'student_code' })
+            .from('student_login_accounts')
+            .upsert(payload, { onConflict: 'student_id' })
             .select()
             .maybeSingle()
 
@@ -280,7 +301,19 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
         }
 
         if (data) {
-            const saved = mapStudentRow(data)
+            const saved = mapLoginRowToStudent(data)
+            await supabase.from('students').upsert([
+                {
+                    id: saved.id,
+                    student_code: saved.student_code,
+                    name: saved.name,
+                    email: saved.email,
+                    course: saved.course,
+                    year_level: saved.year_level,
+                    status: saved.status,
+                },
+            ], { onConflict: 'student_code' }).select().maybeSingle()
+
             const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
             if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, saved)
             else STUDENTS.push(saved)
@@ -289,20 +322,19 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
         }
     } catch (err) {
         console.error('[mockApi] supabase upsertStudent failed, falling back to local', err)
-        // Surface the error to the caller so UI can react (remove optimistic entry)
         throw err
     }
 
-    const existing = STUDENTS.find((s) => s.student_code === student.student_code || s.email === student.email)
+    const existing = STUDENTS.find((s) => s.student_code === normalizedStudentCode || s.email === student.email)
     if (existing) Object.assign(existing, student)
     else STUDENTS.push(student as Student)
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
-    return STUDENTS.find((s) => s.student_code === student.student_code) as Student
+    return STUDENTS.find((s) => s.student_code === normalizedStudentCode) as Student
 }
 
 export async function upsertAppUser(user: { email: string; password?: string; role?: UserRole; student_id?: string | null }) {
     const existing = APP_USERS.find((u) => u.email === user.email)
-    const payload = { ...user, password: user.password ?? 'user123', role: user.role ?? 'student' }
+    const payload = { ...user, role: user.role ?? 'student' }
     if (existing) Object.assign(existing, payload)
     else APP_USERS.push({ id: crypto.randomUUID(), ...payload })
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
@@ -312,7 +344,7 @@ export async function upsertAppUser(user: { email: string; password?: string; ro
 export async function deleteStudent(id: string) {
     try {
         console.debug('[supabase] deleteStudent', id)
-        const { data, error } = await supabase.from('students').delete().eq('id', id)
+        const { data, error } = await supabase.from('student_login_accounts').delete().eq('id', id)
         if (error) {
             console.error('[supabase] deleteStudent error', error)
             throw error

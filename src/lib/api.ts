@@ -2,13 +2,91 @@ import supabase from '../supabaseClient'
 import type { AuthSession, UserRole } from './database.types'
 
 function normalizeStudentCode(value: string): string {
-    const cleaned = String(value ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')
-    return cleaned.startsWith('STU-') ? cleaned : `STU-${cleaned}`
+    const cleaned = String(value ?? '').trim().replace(/[^A-Za-z0-9-]/g, '').toUpperCase()
+    const withoutPrefix = cleaned.replace(/^STU-?/i, '')
+    return withoutPrefix ? `STU-${withoutPrefix}` : 'STU'
+}
+
+function buildStudentIdentifierSet(value: string): string[] {
+    const trimmed = String(value ?? '').trim()
+    const variants = new Set<string>()
+    if (!trimmed) return []
+
+    const direct = [trimmed, trimmed.toUpperCase(), trimmed.toLowerCase()]
+    direct.forEach((variant) => variants.add(variant))
+
+    const normalizedCode = normalizeStudentCode(trimmed)
+    variants.add(normalizedCode)
+    variants.add(normalizedCode.replace(/^STU-/i, ''))
+
+    return [...variants].filter(Boolean)
+}
+
+function rowMatchesStudentIdentifier(row: any, identifiers: string[]): boolean {
+    const allValues = [
+        row?.id,
+        row?.student_code,
+        row?.student_id,
+        row?.email,
+        row?.name,
+    ].filter((value) => typeof value === 'string' && value.trim())
+
+    return allValues.some((value) =>
+        identifiers.some((identifier) => String(value).trim().toUpperCase() === String(identifier).trim().toUpperCase())
+    )
 }
 
 function buildStudentEmailFromCode(value: string): string {
     const code = normalizeStudentCode(value).replace(/^STU-/i, '')
     return `${code.replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`
+}
+
+function isMissingTableError(error: any): boolean {
+    const message = String(error?.message ?? '')
+    return message.includes('Could not find the table') || message.includes('does not exist') || message.includes('relation') && message.includes('does not exist')
+}
+
+function looksLikeUuid(value: string | null | undefined): boolean {
+    return !!String(value ?? '').match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+}
+
+async function ensureStudentRecordForLoginRow(loginRow: any): Promise<any> {
+    const studentCode = String(loginRow?.student_code ?? loginRow?.student_id ?? '').trim()
+    const lookupCode = studentCode || String(loginRow?.id ?? '').trim()
+    if (!lookupCode) throw new Error('Missing student code for borrow record.')
+
+    const { data: existingStudent, error: lookupError } = await supabase
+        .from('students')
+        .select('*')
+        .eq('student_code', lookupCode)
+        .maybeSingle()
+
+    if (lookupError) throw lookupError
+    if (existingStudent) return existingStudent
+
+    const generatedId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `stu-${Date.now()}`
+    const { data: createdStudent, error: createError } = await supabase
+        .from('students')
+        .upsert([
+            {
+                id: generatedId,
+                student_code: studentCode,
+                name: loginRow?.full_name ?? 'Student',
+                email: buildStudentEmailFromCode(studentCode),
+                course: loginRow?.course ?? 'Unassigned',
+                year_level: loginRow?.year_level ?? '1st Year',
+                status: loginRow?.status ?? 'active',
+            },
+        ], { onConflict: 'student_code' })
+        .select()
+        .maybeSingle()
+
+    if (createError) throw createError
+    return createdStudent
+}
+
+function normalizeBookReference(value: unknown): string {
+    return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 async function hashPassword(value: string): Promise<string> {
@@ -17,6 +95,19 @@ async function hashPassword(value: string): Promise<string> {
         return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')
     }
     return value
+}
+
+async function passwordMatchesStoredValue(storedValue: unknown, inputPassword: string): Promise<boolean> {
+    const normalizedStored = String(storedValue ?? '').trim()
+    const hashedInput = await hashPassword(inputPassword)
+
+    if (!normalizedStored) return false
+    if (normalizedStored === inputPassword || normalizedStored === hashedInput) return true
+
+    const [storedLower, inputLower] = [normalizedStored.toLowerCase(), inputPassword.toLowerCase()]
+    if (storedLower === inputLower) return true
+
+    return false
 }
 
 export * from './mockApi'
@@ -32,107 +123,75 @@ import { borrowBook as sbBorrowBook, returnBook as sbReturnBook } from '../servi
 
 export async function borrowBook(studentId: string | undefined, bookId: string) {
     const trimmedStudentId = String(studentId ?? '').trim()
+    if (!trimmedStudentId) throw new Error('Student not found. Please log in with a valid student account.')
+
     try {
-        // services/libraryService.borrowBook expects only bookId and uses supabase auth to get user.
-        // For the custom student-login flow there may be no Supabase auth session, so we handle the DB flow directly below.
-        return await sbBorrowBook(bookId)
+        const identifiers = buildStudentIdentifierSet(trimmedStudentId)
+        const { data: loginRows, error: loginErr } = await supabase
+            .from('student_login_accounts')
+            .select('*')
+            .limit(50)
+
+        if (loginErr) throw loginErr
+
+        const loginRow = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, identifiers)) ?? null
+        if (!loginRow) throw new Error('Student not found. Please register this student first.')
+
+        const studentRecord = await ensureStudentRecordForLoginRow(loginRow)
+        if (!studentRecord?.id) throw new Error('Student profile is missing a UUID record.')
+
+        const { data: allBooks, error: listErr } = await supabase.from('books').select('*').limit(200)
+        if (listErr) throw listErr
+
+        const normalizedBookId = String(bookId ?? '').trim()
+        const bookRow = (allBooks ?? []).find((book: any) => {
+            const candidates = [book?.id, book?.book_code, book?.isbn, book?.title]
+            const normalizedTarget = normalizeBookReference(normalizedBookId)
+            return candidates.some((candidate) => {
+                if (candidate == null || candidate === '') return false
+                const normalizedCandidate = normalizeBookReference(candidate)
+                return normalizedCandidate === normalizedTarget || String(candidate).trim() === normalizedBookId || String(candidate).trim().toLowerCase() === normalizedBookId.toLowerCase()
+            })
+        }) ?? null
+
+        if (!bookRow) throw new Error(`Book not found: ${bookId}`)
+
+        const borrowDate = new Date().toISOString().slice(0, 10)
+        const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        const payload = {
+            id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `loan-${Date.now()}`,
+            txn_code: `TXN-${Date.now()}`,
+            student_id: String(studentRecord.id),
+            book_id: bookRow.id,
+            borrow_date: borrowDate,
+            due_date: dueDate,
+            return_date: null,
+            status: 'active',
+            notified: false,
+            condition: 'Good',
+            created_at: new Date().toISOString(),
+        }
+
+        const { data: inserted, error: insertErr } = await supabase.from('borrowing_records').insert([payload]).select().maybeSingle()
+        if (insertErr) throw insertErr
+
+        const currentAvailable = Number(bookRow.available_copies ?? bookRow.available ?? 0)
+        await supabase.from('books').update({ available_copies: Math.max(currentAvailable - 1, 0), available: Math.max(currentAvailable - 1, 0) }).eq('id', bookRow.id)
+        return inserted
     } catch (err) {
-        console.debug('[api] supabase borrow failed, using custom student-login fallback', err)
-
-        if (!trimmedStudentId) {
-            throw new Error('Student not found')
-        }
-
-        try {
-            const normalizedStudentCode = trimmedStudentId.startsWith('STU-') ? trimmedStudentId : `STU-${trimmedStudentId}`
-            let studentRow: any = null
-            const { data: existingStudent, error: studentErr } = await supabase
-                .from('students')
-                .select('*')
-                .or(`student_code.eq.${normalizedStudentCode},id.eq.${trimmedStudentId}`)
-                .maybeSingle()
-
-            if (studentErr) throw studentErr
-            studentRow = existingStudent
-
-            if (!studentRow) {
-                const { data: loginRow, error: loginErr } = await supabase
-                    .from('student_login_accounts')
-                    .select('*')
-                    .or(`student_id.eq.${trimmedStudentId},student_code.eq.${normalizedStudentCode}`)
-                    .maybeSingle()
-                if (loginErr) throw loginErr
-                if (!loginRow) throw new Error('Student not found')
-
-                const studentPayload = {
-                    id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `student-${Date.now()}`,
-                    student_code: loginRow.student_code ?? normalizedStudentCode,
-                    name: loginRow.full_name ?? 'Student',
-                    email: `${(loginRow.student_code ?? normalizedStudentCode).replace(/^STU-/i, '').replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`,
-                    course: loginRow.course ?? 'Unassigned',
-                    year_level: loginRow.year_level ?? '1st Year',
-                    status: 'active',
-                }
-
-                const { data: createdStudent, error: createErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' }).select().maybeSingle()
-                if (createErr) throw createErr
-                if (!createdStudent) throw new Error('Student not found')
-                studentRow = createdStudent
-            }
-
-            const { data: bookRow, error: bookErr } = await supabase
-                .from('books')
-                .select('*')
-                .or(`id.eq.${bookId},book_code.eq.${bookId},isbn.eq.${bookId}`)
-                .maybeSingle()
-            if (bookErr) throw bookErr
-            if (!bookRow) throw new Error(`Book not found: ${bookId}`)
-
-            const { data: activeLoans, error: activeErr } = await supabase
-                .from('borrowing_records')
-                .select('id')
-                .eq('student_id', studentRow.id)
-                .is('return_date', null)
-            if (activeErr) throw activeErr
-
-            const settingsRes = await supabase.from('settings').select('*').maybeSingle()
-            const maxBooks = Number((settingsRes.data as any)?.max_books_per_student ?? 3)
-            if ((activeLoans ?? []).length >= maxBooks) {
-                throw new Error(`Maximum of ${maxBooks} books can be borrowed at once`)
-            }
-
-            if (Number(bookRow.available ?? 0) <= 0) {
-                throw new Error('This book is currently unavailable.')
-            }
-
-            const borrowDate = new Date().toISOString().slice(0, 10)
-            const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-            const payload = {
-                id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `loan-${Date.now()}`,
-                txn_code: `TXN-${Date.now()}`,
-                student_id: studentRow.id,
-                book_id: bookRow.id,
-                borrow_date: borrowDate,
-                due_date: dueDate,
-                return_date: null,
-                status: 'active',
-                notified: false,
-                condition: 'Good',
-                created_at: new Date().toISOString(),
-            }
-
-            const { data: inserted, error: insertErr } = await supabase.from('borrowing_records').insert([payload]).select().maybeSingle()
-            if (insertErr) throw insertErr
-
-            const { error: updateBookErr } = await supabase.from('books').update({ available: Math.max(Number(bookRow.available ?? 0) - 1, 0) }).eq('id', bookRow.id)
-            if (updateBookErr) throw updateBookErr
-
-            return inserted
-        } catch (dbErr: any) {
-            console.debug('[api] custom student-login borrow failed', dbErr)
-            const { borrowBook: mockBorrow } = await import('./mockApi')
-            return await mockBorrow(trimmedStudentId, bookId)
-        }
+        console.debug('[api] student_login_accounts borrow failed; falling back to mock borrow', err)
+        const { borrowBook: mockBorrow, upsertStudent } = await import('./mockApi')
+        const studentCode = normalizeStudentCode(trimmedStudentId)
+        await upsertStudent({
+            id: crypto?.randomUUID ? crypto.randomUUID() : `mock-student-${Date.now()}`,
+            student_code: studentCode,
+            name: 'Current Student',
+            email: buildStudentEmailFromCode(studentCode),
+            course: 'Unassigned',
+            year_level: '1st Year',
+            status: 'active',
+        })
+        return await mockBorrow(studentCode, bookId)
     }
 }
 
@@ -168,124 +227,53 @@ export async function returnBook(recordId: string) {
 
 export async function login(emailOrId: string, password: string, role: UserRole): Promise<AuthSession> {
     const identifier = String(emailOrId || '').trim()
-    const normalizedInput = identifier.includes('@') ? identifier : normalizeStudentCode(identifier)
-    const loginQueryValue = normalizedInput || identifier
+    const inputValue = identifier.includes('@') ? identifier : normalizeStudentCode(identifier)
 
     try {
+        const targetIdentifiers = buildStudentIdentifierSet(identifier)
         const { data: loginRows, error: loginError } = await supabase
             .from('student_login_accounts')
             .select('*')
-            .or(`student_id.eq.${loginQueryValue},student_code.eq.${loginQueryValue}`)
-            .limit(10)
+            .limit(50)
 
-        if (!loginError && loginRows && loginRows.length > 0) {
-            const row = loginRows.find((candidate: any) => {
-                const studentIdMatch = String(candidate.student_id ?? '').toUpperCase() === String(loginQueryValue).toUpperCase()
-                const studentCodeMatch = String(candidate.student_code ?? '').toUpperCase() === String(loginQueryValue).toUpperCase()
-                return studentIdMatch || studentCodeMatch
-            }) ?? loginRows[0]
+        if (loginError) throw loginError
 
-            if (row) {
-                const hashedInput = await hashPassword(password)
-                const passwordMatches = row.password_hash === password || row.password_hash === hashedInput
-                if (passwordMatches) {
-                    const studentCode = row.student_code ?? row.student_id ?? normalizedInput
-                    const { data: student } = await supabase
-                        .from('students')
-                        .select('*')
-                        .eq('student_code', studentCode)
-                        .maybeSingle()
+        const row = (loginRows ?? []).find((candidate: any) => rowMatchesStudentIdentifier(candidate, targetIdentifiers)) ?? (loginRows ?? [])[0]
 
-                    const { data: cardData } = await supabase
-                        .from('library_cards')
-                        .select('*')
-                        .eq('student_id', student?.id ?? '')
-                        .maybeSingle()
-
-                    const loginUser = {
-                        id: row.id,
-                        email: buildStudentEmailFromCode(studentCode),
-                        student_id: row.student_id,
-                        student_code: studentCode,
-                        full_name: row.full_name,
-                        course: row.course,
-                        year_level: row.year_level,
-                        status: row.status,
-                    }
-
-                    const resolvedStudent = student ?? {
-                        id: row.student_id ?? row.student_code ?? studentCode,
-                        student_code: studentCode,
-                        name: row.full_name,
-                        email: buildStudentEmailFromCode(studentCode),
-                        course: row.course,
-                        year_level: row.year_level,
-                        status: row.status,
-                    }
-
-                    return { user: loginUser as any, student: resolvedStudent, card: (cardData as any) ?? null, loginAccount: row }
-                }
-            }
+        if (!row) {
+            throw new Error('Student not found. Please register this student first.')
         }
 
-        // Fallback to Supabase Auth for generated-internal emails or legacy account records.
-        let emailToUse = identifier
-        let studentCode: string | null = null
-        if (!identifier.includes('@')) {
-            studentCode = normalizeStudentCode(identifier)
-            const { data: sRow } = await supabase.from('students').select('email, student_code').eq('student_code', studentCode).maybeSingle()
-            if (sRow && sRow.email) {
-                emailToUse = sRow.email
-            } else {
-                emailToUse = buildStudentEmailFromCode(studentCode)
-                const { data: derivedRow } = await supabase.from('students').select('email').eq('email', emailToUse).maybeSingle()
-                if (!derivedRow) {
-                    throw new Error('Invalid email or student ID')
-                }
-            }
+        const passwordMatches = await passwordMatchesStoredValue(row.password_hash, password)
+        if (!passwordMatches) {
+            throw new Error('Invalid credentials')
         }
 
-        const authClient: any = supabase.auth
-        let signInRes: any
-        if (typeof authClient.signInWithPassword === 'function') {
-            signInRes = await authClient.signInWithPassword({ email: emailToUse, password })
-        } else if (typeof authClient.signIn === 'function') {
-            signInRes = await authClient.signIn({ email: emailToUse, password })
-        } else {
-            throw new Error('Supabase auth not available')
+        const studentCode = row.student_code ?? row.student_id ?? inputValue
+        const student = {
+            id: row.student_id ?? row.student_code ?? studentCode,
+            student_code: studentCode,
+            name: row.full_name ?? 'Student',
+            email: buildStudentEmailFromCode(studentCode),
+            course: row.course ?? 'Unassigned',
+            year_level: row.year_level ?? '1st Year',
+            status: row.status ?? 'active',
         }
 
-        if (signInRes.error) throw signInRes.error
-        const user = signInRes.data?.user ?? signInRes.user ?? signInRes
-        if (!user || !user.email) throw new Error('Invalid credentials')
-
-        const { data: appUser, error: appErr } = await supabase.from('app_users').select('*').eq('email', user.email).maybeSingle()
-        if (appErr) console.debug('[login] app_user fetch error', appErr)
-
-        let loginAccount = null
-        if (studentCode) {
-            const { data: loginRow } = await supabase.from('student_login_accounts').select('*').eq('student_code', studentCode).maybeSingle()
-            loginAccount = loginRow ?? null
+        const loginUser = {
+            id: row.id,
+            email: buildStudentEmailFromCode(studentCode),
+            student_id: row.student_id,
+            student_code: studentCode,
+            full_name: row.full_name,
+            course: row.course,
+            year_level: row.year_level,
+            status: row.status,
         }
 
-        let student = null
-        if (appUser?.student_id) {
-            const { data: sData } = await supabase.from('students').select('*').eq('id', appUser.student_id).maybeSingle()
-            student = sData ?? null
-        } else if (loginAccount?.student_code) {
-            const { data: sData } = await supabase.from('students').select('*').eq('student_code', loginAccount.student_code).maybeSingle()
-            student = sData ?? null
-        } else {
-            const { data: sData } = await supabase.from('students').select('*').eq('email', user.email).maybeSingle()
-            student = sData ?? null
-        }
-
-        const { data: cardData } = await supabase.from('library_cards').select('*').eq('student_id', student?.id).maybeSingle()
-        const card = (cardData as any) ?? null
-
-        return { user: (loginAccount ?? appUser ?? user) as any, student, card, loginAccount }
+        return { user: loginUser as any, student, card: null, loginAccount: row }
     } catch (err: any) {
-        console.debug('[login] student login failed', err)
+        console.debug('[login] student_login_accounts login failed', err)
         throw err
     }
 }

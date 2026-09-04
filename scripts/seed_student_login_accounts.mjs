@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 
 const defaultSupabaseUrl = 'https://qkmctldmikpkgzuyphig.supabase.co'
@@ -17,6 +18,10 @@ function normalizeStudentCode(value = '') {
     return cleaned.startsWith('STU-') ? cleaned : `STU-${cleaned}`
 }
 
+function hashPassword(value = '') {
+    return createHash('sha256').update(String(value)).digest('hex')
+}
+
 async function main() {
     const rows = [
         {
@@ -25,7 +30,7 @@ async function main() {
             full_name: 'Admin User',
             course: 'Administration',
             year_level: 'Admin',
-            password_hash: 'admin123',
+            password_hash: hashPassword('admin123'),
             status: 'active',
         },
         {
@@ -34,7 +39,7 @@ async function main() {
             full_name: 'Sample User',
             course: 'BSCS',
             year_level: '1st Year',
-            password_hash: 'user123',
+            password_hash: hashPassword('user123'),
             status: 'active',
         },
     ]

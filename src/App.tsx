@@ -23,8 +23,9 @@ import supabase from './supabaseClient'
 type Role = 'student' | 'admin'
 
 function normalizeStudentCode(value: string): string {
-  const cleaned = String(value ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')
-  return cleaned.startsWith('STU-') ? cleaned : `STU-${cleaned}`
+  const cleaned = String(value ?? '').trim().replace(/[^A-Za-z0-9-]/g, '').toUpperCase()
+  const withoutPrefix = cleaned.replace(/^STU-?/i, '')
+  return withoutPrefix ? `STU-${withoutPrefix}` : 'STU'
 }
 
 function buildStudentEmailFromCode(value: string): string {
@@ -361,8 +362,6 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
                     const studentPayload = { id, student_code: studentCode, name, email: internalEmail, course, year_level: yearLevel, status: 'active' }
 
                     const upsertErrors: string[] = []
-                    const { data: sData, error: sErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' }).select().maybeSingle()
-                    if (sErr) upsertErrors.push(sErr.message ?? JSON.stringify(sErr))
 
                     const loginAccountPayload = {
                       student_id: studentCode,
@@ -375,6 +374,9 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
                     }
                     const { data: loginRow, error: loginErr } = await supabase.from('student_login_accounts').upsert([loginAccountPayload], { onConflict: 'student_id' }).select().maybeSingle()
                     if (loginErr) upsertErrors.push(loginErr.message ?? JSON.stringify(loginErr))
+
+                    const { error: studentErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' })
+                    if (studentErr) upsertErrors.push(studentErr.message ?? JSON.stringify(studentErr))
 
                     if (upsertErrors.length > 0) {
                       console.error('[signup] upsert errors', upsertErrors)
@@ -825,13 +827,29 @@ function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void
   )
 }
 
-function SearchBooks({ studentId }: { studentId?: string }) {
+function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [borrowModal, setBorrowModal] = useState<any | null>(null)
+  const [testStudentId, setTestStudentId] = useState(studentId || userProfile?.studentCode || userProfile?.studentId || 'STU-2021-001')
+  const [testBookId, setTestBookId] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const resolvedBorrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId]
+    .map((value) => String(value ?? '').trim())
+    .find((value) => value && !value.includes('@')) ?? ''
+
+  const studentName = userProfile?.name ?? 'Student'
+  const libraryCardNo = userProfile?.card ?? `CARD-${resolvedBorrowStudentId.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12) || 'STUDENT'}`
+  const studentIdentifier = resolvedBorrowStudentId || (testStudentId && !testStudentId.includes('@') ? testStudentId : '')
+
+  useEffect(() => {
+    const nextValue = studentId || userProfile?.studentCode || userProfile?.studentId || testStudentId
+    const chosen = nextValue && !nextValue.includes('@') ? nextValue : 'STU-2021-001'
+    setTestStudentId((current) => current && current !== 'STU-2021-001' ? current : chosen)
+  }, [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId])
 
   const { data: booksRt } = useSupabaseRealtime('books')
 
@@ -856,12 +874,50 @@ function SearchBooks({ studentId }: { studentId?: string }) {
     return matchQ && matchC
   })
 
+  useEffect(() => {
+    if (!testBookId && localBooks[0]) setTestBookId(localBooks[0].id)
+  }, [localBooks, testBookId])
+
+  const handleOpenBorrowTest = () => {
+    const selectedBook = localBooks.find((book) => book.id === testBookId) ?? localBooks[0]
+    if (!selectedBook) {
+      setError('No book is available for a test borrow.')
+      return
+    }
+
+    const reference = String(selectedBook.book_code ?? selectedBook.isbn ?? selectedBook.id ?? '').trim()
+
+    setBorrowModal({
+      id: selectedBook.id,
+      reference,
+      title: selectedBook.title,
+      author: selectedBook.author,
+      isbn: selectedBook.isbn,
+      category: selectedBook.category,
+      available: selectedBook.available,
+      copies: selectedBook.copies,
+    })
+    setError(null)
+    setConfirmed(false)
+  }
+
   const handleConfirmBorrow = async () => {
-    if (!studentId || !borrowModal) return
+    if (!borrowModal) return
+
+    const borrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId]
+      .map((value) => String(value ?? '').trim())
+      .find((value) => value && !value.includes('@')) ?? ''
+
+    if (!borrowStudentId) {
+      setError('Student not found in student_login_accounts. Please log in again.')
+      return
+    }
+
     try {
       setBusy(true)
       setError(null)
-      await borrowBook(studentId, borrowModal.id)
+      const bookReference = String(borrowModal.reference || borrowModal.isbn || borrowModal.id || '').trim()
+      await borrowBook(borrowStudentId, bookReference || String(borrowModal.id || ''))
       setConfirmed(true)
     } catch (e: any) {
       setError(e?.message || 'Unable to borrow this book right now.')
@@ -889,11 +945,13 @@ function SearchBooks({ studentId }: { studentId?: string }) {
           ) : (
             <>
               <h3 className="font-semibold text-green-900 mb-4">Confirm Borrowing</h3>
-              {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+              {error && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+              )}
               <div className="flex flex-col gap-3 text-sm mb-6">
                 {[
-                  ['Student Name', 'Student'],
-                  ['Library Card No.', 'N/A'],
+                  ['Student Name', studentName],
+                  ['Library Card No.', libraryCardNo],
                   ['Book Title', borrowModal.title],
                   ['Author', borrowModal.author],
                   ['Borrow Date', new Date().toISOString().slice(0, 10)],
@@ -908,8 +966,8 @@ function SearchBooks({ studentId }: { studentId?: string }) {
               <div className="flex gap-3">
                 <button
                   onClick={handleConfirmBorrow}
-                  disabled={busy}
-                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white font-medium text-sm rounded-lg transition-colors"
+                  disabled={busy || !studentIdentifier}
+                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium text-sm rounded-lg transition-colors"
                 >
                   {busy ? 'Processing...' : 'Confirm Borrow'}
                 </button>
@@ -1002,6 +1060,52 @@ function SearchBooks({ studentId }: { studentId?: string }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-6 rounded-xl border border-green-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="text-base font-semibold text-green-900">Borrow Test Area</h3>
+          <span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-green-700">Debug</span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">Student ID</label>
+            <input
+              value={testStudentId}
+              onChange={(e) => setTestStudentId(e.target.value)}
+              placeholder="STU-2021-001"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">Book ID</label>
+            <input
+              value={testBookId}
+              onChange={(e) => setTestBookId(e.target.value)}
+              placeholder="Choose a book from the list"
+              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleOpenBorrowTest}
+            className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-green-700"
+          >
+            Open Borrow Test
+          </button>
+          <button
+            onClick={() => {
+              setTestStudentId(studentId || userProfile?.studentCode || userProfile?.studentId || 'STU-2021-001')
+              setTestBookId(localBooks[0]?.id ?? '')
+            }}
+            className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
+          >
+            Reset
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -1843,27 +1947,11 @@ function AdminBooks() {
 }
 
 function AdminStudents() {
-  const { data: studentsRt } = useSupabaseRealtime('students')
   const [students, setStudents] = useState(() => readPersistedState(PERSISTED_STUDENTS_KEY, adminStudents))
 
   useEffect(() => {
     savePersistedState(PERSISTED_STUDENTS_KEY, students)
   }, [students])
-
-  useEffect(() => {
-    if (!studentsRt) return
-    const mapped = (studentsRt ?? []).map((s: any) => ({
-      id: s.id,
-      name: s.name ?? '',
-      course: s.course ?? '',
-      card: s.card_no ?? s.cardNo ?? 'LC-NEW',
-      email: s.email ?? '',
-      status: s.status ?? 'active',
-    }))
-
-    // Merge realtime students with local list so newly created students aren't dropped
-    setStudents((prev) => mergeRecords(prev, mapped))
-  }, [studentsRt])
 
   const [query, setQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -1951,12 +2039,8 @@ function AdminStudents() {
 
       console.debug('upsertStudent returned', saved)
 
-      await upsertAppUser({
-        email: trimmed.email,
-        password: 'user123',
-        role: 'student',
-        student_id: saved.id,
-      })
+      // The admin student form does not collect a password here, so do not create a login account
+      // with a hardcoded fallback. A real password must be supplied in a dedicated student-signup flow.
 
       // replace optimistic entry with saved DB row, and remove duplicates
       setStudents((current) => mergeRecords(current, [{
@@ -2186,31 +2270,10 @@ function AdminUsers() {
     setUsers(mapped)
   }, [usersRt])
 
-  // Fetch the real student codes for the linked student records so the table can display the correct values
+  // The live app uses student_login_accounts as the student source of truth.
+  // Keep the display local and avoid querying legacy students rows that do not exist.
   useEffect(() => {
-    const studentCodes = users.filter((u: any) => u.studentCode).map((u: any) => u.studentCode)
-    if (!studentCodes || studentCodes.length === 0) return setStudentMap({})
-
-    let cancelled = false
-      ; (async () => {
-        try {
-          const { data: rows, error } = await supabase.from('students').select('student_code, id').in('student_code', studentCodes)
-          if (error) {
-            console.debug('[AdminUsers] failed to fetch students', error)
-            return
-          }
-          if (cancelled) return
-          const map: Record<string, string> = {}
-          for (const r of rows ?? []) {
-            const code = (r.student_code || '')
-            map[code] = code
-          }
-          setStudentMap(map)
-        } catch (e) {
-          console.debug('[AdminUsers] unexpected', e)
-        }
-      })()
-    return () => { cancelled = true }
+    setStudentMap({})
   }, [users])
 
   return (
@@ -2764,7 +2827,7 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
   const renderView = () => {
     switch (view) {
       case 'dashboard': return <StudentDashboard onNavigate={setView} />
-      case 'search': return <SearchBooks studentId={studentId} />
+      case 'search': return <SearchBooks studentId={studentId} userProfile={userProfile} />
       case 'borrowed': return <MyBorrowedBooks userProfile={userProfile} />
       case 'history': return <BorrowingHistory />
       case 'borrower-card': return <StudentBorrowerCard userProfile={userProfile} />
@@ -3019,7 +3082,8 @@ export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
 
-  // start auth -> DB sync so self-service signups create student rows
+  // The live project uses the custom student_login_accounts flow.
+  // Do not trigger the legacy students/library_cards sync because those tables are not present.
   useEffect(() => {
     startAuthSync()
   }, [])
@@ -3028,8 +3092,9 @@ export default function App() {
     const res = await login(email, password, role)
     const student = res.student ?? null
     const card = res.card ?? null
-    const effectiveStudentCode = student?.student_code ?? res.user?.student_code ?? res.user?.student_id ?? email
-    const effectiveStudentId = student?.student_code ?? student?.id ?? res.user?.student_code ?? res.user?.student_id ?? email
+    const effectiveStudentCode = res.user?.student_code ?? student?.student_code ?? res.user?.student_id ?? email
+    const effectiveStudentId = res.user?.student_id ?? effectiveStudentCode
+    const derivedCard = card?.card_no ?? (effectiveStudentCode ? `CARD-${String(effectiveStudentCode).replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12) || 'STUDENT'}` : 'N/A')
 
     setAuth({
       role,
@@ -3037,9 +3102,9 @@ export default function App() {
       studentId: effectiveStudentId,
       email: res.user?.email ?? email,
       name: student?.name ?? res.user?.full_name ?? res.user?.email?.split('@')[0] ?? 'Student',
-      studentCode: student?.student_code ?? res.user?.student_code ?? 'N/A',
+      studentCode: effectiveStudentCode,
       course: student?.course ?? res.user?.course ?? 'Unassigned',
-      card: card?.card_no ?? 'N/A',
+      card: derivedCard,
     })
   }
 
