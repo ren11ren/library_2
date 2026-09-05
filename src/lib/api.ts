@@ -138,11 +138,69 @@ async function passwordMatchesStoredValue(storedValue: unknown, inputPassword: s
 
 export * from './mockApi'
 
-// Prefer Supabase-backed implementations for some read operations.
-export {
-    getBooks as fetchBooks,
-    getUserBorrowedBooks as fetchStudentBorrowingRecords,
-} from '../services/libraryService'
+export async function fetchStudentBorrowingRecords(studentId?: string) {
+    const trimmedStudentId = String(studentId ?? '').trim()
+    if (!trimmedStudentId) return []
+
+    try {
+        const targetIdentifiers = buildStudentIdentifierSet(trimmedStudentId)
+        const { data: loginRows, error: loginErr } = await supabase
+            .from('student_login_accounts')
+            .select('*')
+            .limit(200)
+
+        if (loginErr) throw loginErr
+
+        const matchedLogin = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, targetIdentifiers)) ?? null
+        if (!matchedLogin?.id) return []
+
+        const { data: allRecords, error } = await supabase
+            .from('borrowing_records')
+            .select('*')
+            .order('borrow_date', { ascending: false })
+
+        if (error) throw error
+
+        const studentMatchValues = new Set([
+            String(matchedLogin.id ?? '').trim(),
+            String(matchedLogin.student_id ?? '').trim(),
+            String(matchedLogin.student_code ?? '').trim(),
+            String(matchedLogin.full_name ?? '').trim(),
+        ].filter(Boolean))
+
+        const matchingRecords = (allRecords ?? []).filter((record: any) => {
+            const studentId = String(record?.student_id ?? '').trim()
+            return studentMatchValues.has(studentId) || studentId === String(matchedLogin.id ?? '').trim()
+        }).filter((record: any) => !record?.return_date || record.return_date === null || record.return_date === undefined || record.return_date === '')
+
+        if (!matchingRecords.length) return []
+
+        const bookIds = [...new Set(matchingRecords.map((record: any) => String(record.book_id ?? '').trim()).filter(Boolean))]
+        const { data: bookRows } = await supabase
+            .from('books')
+            .select('*')
+            .in('id', bookIds.length ? bookIds : ['00000000-0000-0000-0000-000000000000'])
+
+        const bookMap = new Map((bookRows ?? []).map((book: any) => [String(book.id ?? '').trim(), book]))
+
+        return matchingRecords.map((record: any) => {
+            const book = bookMap.get(String(record.book_id ?? '').trim())
+            return {
+                id: record.id,
+                title: book?.title ?? 'Unknown book',
+                author: book?.author ?? 'Unknown author',
+                borrowDate: record.borrow_date ?? record.created_at ?? '',
+                dueDate: record.due_date ?? '',
+                status: record.status ?? 'active',
+                studentId: record.student_id,
+                cardNo: record.card_no ?? null,
+            }
+        })
+    } catch (err) {
+        console.debug('[api] fetchStudentBorrowingRecords failed', err)
+        return []
+    }
+}
 
 // Prefer Supabase-backed borrow/return so availability matches DB state.
 import { borrowBook as sbBorrowBook, returnBook as sbReturnBook } from '../services/libraryService'
@@ -163,9 +221,6 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
         const loginRow = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, identifiers)) ?? null
         if (!loginRow) throw new Error('Student not found. Please register this student first.')
 
-        const studentRecord = await ensureStudentRecordForLoginRow(loginRow)
-        if (!studentRecord?.id) throw new Error('Student profile is missing a UUID record.')
-
         const { data: allBooks, error: listErr } = await supabase.from('books').select('*').limit(200)
         if (listErr) throw listErr
 
@@ -179,7 +234,7 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
         const payload = {
             id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `loan-${Date.now()}`,
             txn_code: `TXN-${Date.now()}`,
-            student_id: String(studentRecord.id),
+            student_id: String(loginRow.id),
             book_id: bookRow.id,
             borrow_date: borrowDate,
             due_date: dueDate,

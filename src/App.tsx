@@ -4,6 +4,7 @@ import {
   fetchStudentBorrowingRecords,
   loadDashboardData,
   borrowBook,
+  returnBook,
   processReturn,
   saveSettings,
   fetchSettings,
@@ -16,7 +17,7 @@ import {
 } from './lib/api'
 import useSupabaseRealtime from './hooks/useSupabaseRealtime'
 import mergeRecords from './lib/mergeRecords'
-import { startAuthSync } from './supabaseClient'
+import { startAuthSync, mapKeysToCamel } from './supabaseClient'
 import supabase from './supabaseClient'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -273,6 +274,27 @@ const adminStudents: Array<{ id: string; name: string; course: string; card: str
 const borrowingRecords: any[] = []
 const overdueRecords: any[] = []
 const historyBooks: any[] = []
+
+function deriveBookAvailability(book: any, borrowRows: any[] = []) {
+  const totalCopies = Number(book?.total_copies ?? book?.totalCopies ?? book?.copies ?? 1)
+  const explicitAvailable = Number(book?.available_copies ?? book?.availableCopies ?? book?.available ?? totalCopies)
+  const activeBorrowCount = (borrowRows ?? []).filter((row: any) => {
+    const matchesBook = String(row?.book_id ?? row?.bookId ?? '').trim() === String(book?.id ?? '').trim()
+    const isActive = !row?.return_date && String(row?.status ?? '').toLowerCase() !== 'returned'
+    return matchesBook && isActive
+  }).length
+
+  const realAvailability = Math.max(0, totalCopies - activeBorrowCount)
+  const ifBorrowHistoryExists = (borrowRows ?? []).some((row: any) => {
+    const matchesBook = String(row?.book_id ?? row?.bookId ?? '').trim() === String(book?.id ?? '').trim()
+    const isActive = !row?.return_date && String(row?.status ?? '').toLowerCase() !== 'returned'
+    return matchesBook && isActive
+  })
+
+  if (ifBorrowHistoryExists) return realAvailability
+  if (Number.isFinite(explicitAvailable) && explicitAvailable >= 0) return Math.max(0, Math.min(explicitAvailable, totalCopies))
+  return totalCopies
+}
 
 // ─── Status Badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -901,6 +923,7 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
   }, [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId])
 
   const { data: booksRt } = useSupabaseRealtime('books')
+  const { data: borrowingRt } = useSupabaseRealtime('borrowing_records')
 
   const categories = libraryClassificationCategories
 
@@ -912,7 +935,7 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
       author: r.author ?? '',
       category: r.category ?? '',
       copies: Number(r.total_copies ?? r.totalCopies ?? r.copies ?? 1),
-      available: Number(r.available_copies ?? r.availableCopies ?? r.available ?? (r.total_copies ?? r.totalCopies ?? r.copies ?? 1)),
+      available: deriveBookAvailability(r, borrowingRt ?? []),
     }))
     : searchResults
 
@@ -967,24 +990,6 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
       setError(null)
       const bookReference = String(borrowModal.reference || borrowModal.isbn || borrowModal.id || '').trim()
       await borrowBook(borrowStudentId, bookReference || String(borrowModal.id || ''))
-
-      const borrowDate = new Date().toISOString().slice(0, 10)
-      const dueDate = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
-      const existing = readPersistedState<PersistedBorrowEntry[]>(PERSISTED_BORROWED_BOOKS_KEY, [])
-      const nextEntries: PersistedBorrowEntry[] = [
-        {
-          id: String(borrowModal.id ?? `${borrowStudentId}-${Date.now()}`),
-          title: borrowModal.title,
-          author: borrowModal.author,
-          borrowDate,
-          dueDate,
-          status: 'active',
-          studentId: borrowStudentId,
-          cardNo: libraryCardNo,
-        },
-        ...existing.filter((entry) => !(entry.studentId === borrowStudentId && entry.title === borrowModal.title)),
-      ]
-      savePersistedState(PERSISTED_BORROWED_BOOKS_KEY, nextEntries)
       window.dispatchEvent(new Event('lms-borrow-updated'))
       setConfirmed(true)
     } catch (e: any) {
@@ -1321,7 +1326,8 @@ type PersistedBorrowEntry = BorrowEntry
 
 function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [selected, setSelected] = useState<BorrowEntry | null>(null)
-  const [rows, setRows] = useState<PersistedBorrowEntry[]>(() => readPersistedState(PERSISTED_BORROWED_BOOKS_KEY, []))
+  const [rows, setRows] = useState<PersistedBorrowEntry[]>([])
+  const [returningId, setReturningId] = useState<string | null>(null)
   const student = {
     name: userProfile?.name ?? 'Student',
     studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
@@ -1330,44 +1336,76 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
   }
 
   useEffect(() => {
-    const syncRows = () => {
-      const stored = readPersistedState<PersistedBorrowEntry[]>(PERSISTED_BORROWED_BOOKS_KEY, [])
-      const currentStudentId = String(userProfile?.studentId ?? userProfile?.studentCode ?? '').trim()
-      const filtered = currentStudentId
-        ? stored.filter((entry) => String(entry.studentId ?? '').trim() === currentStudentId)
-        : stored
-      setRows(filtered)
+    const loadRows = async () => {
+      const currentStudentId = String(userProfile?.studentId ?? userProfile?.studentCode ?? userProfile?.email ?? '').trim()
+      if (!currentStudentId) {
+        setRows([])
+        return
+      }
+
+      try {
+        const nextRows = await fetchStudentBorrowingRecords(currentStudentId)
+        setRows(nextRows)
+      } catch {
+        setRows([])
+      }
     }
 
-    syncRows()
-    window.addEventListener('lms-borrow-updated', syncRows)
-    return () => window.removeEventListener('lms-borrow-updated', syncRows)
-  }, [userProfile?.studentId, userProfile?.studentCode])
+    loadRows()
+    const handleBorrowUpdated = () => { void loadRows() }
+    window.addEventListener('lms-borrow-updated', handleBorrowUpdated)
+    return () => window.removeEventListener('lms-borrow-updated', handleBorrowUpdated)
+  }, [userProfile?.studentId, userProfile?.studentCode, userProfile?.email])
+
+  const handleReturnBook = async (recordId: string) => {
+    try {
+      setReturningId(recordId)
+      await returnBook(recordId)
+      setRows((current) => current.filter((row) => String(row.id) !== String(recordId)))
+      window.dispatchEvent(new Event('lms-borrow-updated'))
+    } catch (error: any) {
+      console.error('Return book failed', error)
+      window.alert(error?.message || 'Unable to return this book right now.')
+    } finally {
+      setReturningId(null)
+    }
+  }
 
   return (
     <div>
       <PageHeader title="My Borrowed Books" subtitle="Track your active loans and due dates." />
-      <Table headers={['Book Title', 'Author', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
-        {rows.map((b) => (
-          <Tr key={`${b.studentId ?? 'student'}-${b.id}`}>
-            <Td className="font-medium text-gray-900">{b.title}</Td>
-            <Td>{b.author}</Td>
-            <Td>{b.borrowDate}</Td>
-            <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
-              {b.dueDate}
-            </Td>
-            <Td><StatusBadge status={b.status} /></Td>
-            <Td>
-              <button
-                onClick={() => setSelected(b)}
-                className="px-3 py-1.5 border border-green-200 text-green-700 text-xs font-medium rounded-lg hover:bg-green-50 transition-colors"
-              >
-                Borrower Card
-              </button>
-            </Td>
-          </Tr>
-        ))}
-      </Table>
+      {rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowed books yet for this student.</div>
+      ) : (
+        <Table headers={['Book Title', 'Author', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
+          {rows.map((b) => (
+            <Tr key={`${b.studentId ?? 'student'}-${b.id}`}>
+              <Td className="font-medium text-gray-900">{b.title}</Td>
+              <Td>{b.author}</Td>
+              <Td>{b.borrowDate}</Td>
+              <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
+                {b.dueDate}
+              </Td>
+              <Td><StatusBadge status={b.status} /></Td>
+              <Td className="space-x-2">
+                <button
+                  onClick={() => setSelected(b)}
+                  className="px-3 py-1.5 border border-green-200 text-green-700 text-xs font-medium rounded-lg hover:bg-green-50 transition-colors"
+                >
+                  Borrower Card
+                </button>
+                <button
+                  onClick={() => handleReturnBook(String(b.id))}
+                  disabled={returningId === String(b.id)}
+                  className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {returningId === String(b.id) ? 'Returning...' : 'Return'}
+                </button>
+              </Td>
+            </Tr>
+          ))}
+        </Table>
+      )}
       {selected && (
         <BorrowerCardSlip
           book={selected}
@@ -1575,6 +1613,8 @@ function AdminBooks() {
   const [books, setBooks] = useState(() => readPersistedState(PERSISTED_BOOKS_KEY, adminBooks))
   const dbInitialized = useRef(false)
 
+  const { data: borrowingRt } = useSupabaseRealtime('borrowing_records')
+
   useEffect(() => {
     // Map realtime DB rows (camelCase) to the UI's expected shape
     if (!booksRt) return
@@ -1586,7 +1626,7 @@ function AdminBooks() {
       publisher: r.publisher ?? '',
       category: r.category ?? '',
       copies: Number(r.total_copies ?? r.totalCopies ?? r.copies ?? 1),
-      available: Number(r.available_copies ?? r.availableCopies ?? r.available ?? (r.total_copies ?? r.totalCopies ?? r.copies ?? 1)),
+      available: deriveBookAvailability(r, borrowingRt ?? []),
       rack: r.rack ?? 'R1',
       updatedOn: new Date().toISOString(),
       cover_url: r.coverUrl ?? r.cover_url ?? null,
@@ -1600,7 +1640,7 @@ function AdminBooks() {
       // Merge realtime rows with any local-only entries to avoid dropping newly added items
       setBooks((prev) => mergeRecords(prev, mapped))
     }
-  }, [booksRt])
+  }, [booksRt, borrowingRt])
 
   const [query, setQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('All')
@@ -2394,6 +2434,61 @@ function AdminUsers() {
 }
 
 function AdminBorrowingRecords() {
+  const [query, setQuery] = useState('')
+  const { data: borrowRows } = useSupabaseRealtime('borrowing_records')
+  const { data: bookRows } = useSupabaseRealtime('books')
+  const [loginRows, setLoginRows] = useState<any[]>([])
+
+  useEffect(() => {
+    async function loadLoginRows() {
+      const { data, error } = await supabase.from('student_login_accounts').select('*').limit(200)
+      if (!error) setLoginRows((data ?? []).map((row: any) => mapKeysToCamel(row)))
+    }
+
+    void loadLoginRows()
+  }, [])
+
+  const rows = (borrowRows ?? []).map((record: any) => {
+    const recordStudentId = String(record?.studentId ?? record?.student_id ?? '').trim()
+    const recordBookId = String(record?.bookId ?? record?.book_id ?? '').trim()
+    const recordTxn = String(record?.txnCode ?? record?.txn_code ?? record?.id ?? '').trim()
+
+    const student = (loginRows ?? []).find((item: any) => {
+      const itemId = String(item?.id ?? '').trim()
+      const itemStudentId = String(item?.studentId ?? item?.student_id ?? '').trim()
+      const itemStudentCode = String(item?.studentCode ?? item?.student_code ?? '').trim()
+
+      return itemId === recordStudentId
+        || itemStudentId === recordStudentId
+        || itemStudentCode === recordStudentId
+        || String(itemId).toLowerCase() === String(recordStudentId).toLowerCase()
+        || String(itemStudentId).toLowerCase() === String(recordStudentId).toLowerCase()
+        || String(itemStudentCode).toLowerCase() === String(recordStudentId).toLowerCase()
+    })
+
+    const book = (bookRows ?? []).find((item: any) => {
+      const itemId = String(item?.id ?? '').trim()
+      return itemId === recordBookId
+    })
+
+    return {
+      id: record.id,
+      txn: recordTxn || record.id,
+      student: student?.fullName ?? student?.full_name ?? student?.studentCode ?? (recordStudentId || 'Unknown student'),
+      card: student?.studentCode ?? student?.student_code ?? 'N/A',
+      book: book?.title ?? 'Unknown book',
+      borrow: record.borrowDate ?? record.borrow_date ?? 'N/A',
+      due: record.dueDate ?? record.due_date ?? 'N/A',
+      status: record.status ?? 'active',
+    }
+  })
+
+  const filtered = rows.filter((row) => {
+    const q = query.toLowerCase()
+    if (!q) return true
+    return [row.student, row.book, row.txn].join(' ').toLowerCase().includes(q)
+  })
+
   return (
     <div>
       <PageHeader title="Borrowing Records" subtitle="All active and historical borrowing transactions." />
@@ -2401,25 +2496,32 @@ function AdminBorrowingRecords() {
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></span>
         <input
           type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by student or book..."
           className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition max-w-sm"
         />
       </div>
-      <Table headers={['Txn ID', 'Student', 'Card No.', 'Book', 'Borrow Date', 'Due Date', 'Status']}>
-        {borrowingRecords.map((r) => (
-          <Tr key={r.txn}>
-            <Td className="font-mono text-xs text-gray-400">{r.txn}</Td>
-            <Td className="font-medium text-gray-900">{r.student}</Td>
-            <Td className="font-mono text-xs text-green-700">{r.card}</Td>
-            <Td>{r.book}</Td>
-            <Td>{r.borrow}</Td>
-            <Td className={r.status === 'overdue' ? 'text-red-600 font-medium' : r.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
-              {r.due}
-            </Td>
-            <Td><StatusBadge status={r.status} /></Td>
-          </Tr>
-        ))}
-      </Table>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowing records found.</div>
+      ) : (
+        <Table headers={['Txn ID', 'Student', 'Card No.', 'Book', 'Borrow Date', 'Due Date', 'Status']}>
+          {filtered.map((r) => (
+            <Tr key={r.id ?? r.txn}>
+              <Td className="font-mono text-xs text-gray-400">{r.txn}</Td>
+              <Td className="font-medium text-gray-900">{r.student}</Td>
+              <Td className="font-mono text-xs text-green-700">{r.card}</Td>
+              <Td>{r.book}</Td>
+              <Td>{r.borrow}</Td>
+              <Td className={r.status === 'overdue' ? 'text-red-600 font-medium' : r.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
+                {r.due}
+              </Td>
+              <Td><StatusBadge status={r.status} /></Td>
+            </Tr>
+          ))}
+        </Table>
+      )}
     </div>
   )
 }
@@ -3210,8 +3312,11 @@ export default function App() {
       loadDashboardData().then((d) => setDashboard(d)).catch(() => { })
     }
 
-    if (auth.role === 'student' && auth.studentId) {
-      fetchStudentBorrowingRecords().then(() => { }).catch(() => { })
+    if (auth.role === 'student') {
+      const studentLookupKey = auth.studentCode ?? auth.studentId ?? auth.email ?? ''
+      if (studentLookupKey) {
+        fetchStudentBorrowingRecords(studentLookupKey).then(() => { }).catch(() => { })
+      }
     }
   }, [auth])
 
