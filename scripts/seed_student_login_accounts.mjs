@@ -39,7 +39,7 @@ async function main() {
             full_name: 'Sample User',
             course: 'BSCS',
             year_level: '1st Year',
-            password_hash: hashPassword('user123'),
+            password_hash: hashPassword('demo123'),
             status: 'active',
         },
     ]

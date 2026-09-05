@@ -47,8 +47,8 @@ async function main() {
 
     // app_users
     const appUsers = [
-        { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', email: 'maria.santos@college.edu', password: 'user123', role: 'student', student_id: '11111111-1111-1111-1111-111111111111', created_at: '2025-01-01T00:00:00Z' },
-        { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', email: 'juan.delacruz@college.edu', password: 'user123', role: 'student', student_id: '11111111-1111-1111-1111-222222222222', created_at: '2025-01-02T00:00:00Z' },
+        { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', email: 'maria.santos@college.edu', password: 'demo123', role: 'student', student_id: '11111111-1111-1111-1111-111111111111', created_at: '2025-01-01T00:00:00Z' },
+        { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', email: 'juan.delacruz@college.edu', password: 'demo123', role: 'student', student_id: '11111111-1111-1111-1111-222222222222', created_at: '2025-01-02T00:00:00Z' },
         { id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', email: 'librarian@college.edu', password: 'admin123', role: 'admin', student_id: null, created_at: '2025-01-03T00:00:00Z' },
     ]
 

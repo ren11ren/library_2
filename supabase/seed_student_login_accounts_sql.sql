@@ -84,7 +84,7 @@ VALUES
     'Sample User',
     'BSCS',
     '1st Year',
-    'user123',
+    'demo123',
     'active'
   )
 ON CONFLICT (student_id) DO UPDATE SET

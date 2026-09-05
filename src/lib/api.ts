@@ -89,6 +89,32 @@ function normalizeBookReference(value: unknown): string {
     return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+function findBookMatch(allBooks: any[], target: string): any {
+    const trimmedTarget = String(target ?? '').trim()
+    if (!trimmedTarget) return null
+
+    const targetNormalized = normalizeBookReference(trimmedTarget)
+    return (allBooks ?? []).find((book: any) => {
+        const candidates = [
+            book?.id,
+            book?.book_code,
+            book?.bookId,
+            book?.isbn,
+            book?.code,
+            book?.title,
+        ].filter((candidate) => candidate != null && String(candidate).trim() !== '')
+
+        return candidates.some((candidate) => {
+            const candidateText = String(candidate).trim()
+            const normalizedCandidate = normalizeBookReference(candidateText)
+            return normalizedCandidate === targetNormalized
+                || candidateText.toLowerCase() === trimmedTarget.toLowerCase()
+                || candidateText.replace(/-/g, '').toLowerCase() === trimmedTarget.replace(/-/g, '').toLowerCase()
+                || (typeof book?.title === 'string' && normalizeBookReference(book.title).includes(targetNormalized))
+        })
+    }) ?? null
+}
+
 async function hashPassword(value: string): Promise<string> {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
         const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
@@ -144,15 +170,7 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
         if (listErr) throw listErr
 
         const normalizedBookId = String(bookId ?? '').trim()
-        const bookRow = (allBooks ?? []).find((book: any) => {
-            const candidates = [book?.id, book?.book_code, book?.isbn, book?.title]
-            const normalizedTarget = normalizeBookReference(normalizedBookId)
-            return candidates.some((candidate) => {
-                if (candidate == null || candidate === '') return false
-                const normalizedCandidate = normalizeBookReference(candidate)
-                return normalizedCandidate === normalizedTarget || String(candidate).trim() === normalizedBookId || String(candidate).trim().toLowerCase() === normalizedBookId.toLowerCase()
-            })
-        }) ?? null
+        const bookRow = findBookMatch(allBooks ?? [], normalizedBookId)
 
         if (!bookRow) throw new Error(`Book not found: ${bookId}`)
 

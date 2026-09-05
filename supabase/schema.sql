@@ -381,8 +381,8 @@ ON CONFLICT (id) DO NOTHING;
 ---------
 INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
 VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','maria.santos@college.edu','user123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','juan.delacruz@college.edu','user123','student','11111111-1111-1111-1111-222222222222','2025-01-02T00:00:00Z'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','maria.santos@college.edu','demo123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','juan.delacruz@college.edu','demo123','student','11111111-1111-1111-1111-222222222222','2025-01-02T00:00:00Z'),
   ('cccccccc-cccc-cccc-cccc-cccccccccccc','librarian@college.edu','admin123','admin',NULL,'2025-01-03T00:00:00Z')
 ON CONFLICT (email) DO NOTHING;
 

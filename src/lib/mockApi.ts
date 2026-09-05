@@ -46,10 +46,14 @@ function loadMockData() {
         if (raw) {
             const parsed = JSON.parse(raw)
             const normalized = ensureSeedUsers(parsed)
-            if (JSON.stringify(normalized) !== raw) {
-                saveMockData(normalized)
+            const reconciled = {
+                ...normalized,
+                books: reconcileBookAvailability(normalized.books ?? [], normalized.borrowing_records ?? []),
             }
-            return normalized
+            if (JSON.stringify(reconciled) !== JSON.stringify(normalized)) {
+                saveMockData(reconciled)
+            }
+            return reconciled
         }
     } catch (e) {
         // ignore
@@ -66,8 +70,38 @@ function saveMockData(data: any) {
     }
 }
 
+function reconcileBookAvailability(books: any[] = [], borrowingRecords: any[] = []) {
+    const activeByBook = new Map<string, number>()
+    for (const record of borrowingRecords) {
+        if (!record || record.return_date) continue
+        const key = String(record.book_id ?? record.book ?? '').trim()
+        if (!key) continue
+        activeByBook.set(key, (activeByBook.get(key) ?? 0) + 1)
+    }
+
+    return books.map((book: any) => {
+        const bookId = String(book?.id ?? book?.book_code ?? book?.isbn ?? '').trim()
+        const totalCopies = Number(book?.total_copies ?? book?.copies ?? 1)
+        const activeLoans = bookId ? activeByBook.get(bookId) ?? 0 : 0
+        const derivedAvailable = Math.max(0, totalCopies - activeLoans)
+        const currentAvailable = Number(book?.available_copies ?? book?.available ?? totalCopies)
+
+        const correctedAvailable = Number.isFinite(currentAvailable) && currentAvailable > 0
+            ? derivedAvailable || Math.min(currentAvailable, totalCopies)
+            : derivedAvailable
+
+        return {
+            ...book,
+            copies: totalCopies,
+            available: correctedAvailable,
+            total_copies: totalCopies,
+            available_copies: correctedAvailable,
+        }
+    })
+}
+
 const persisted = loadMockData()
-const BOOKS = (persisted as any).books as Book[]
+const BOOKS = reconcileBookAvailability((persisted as any).books as Book[], (persisted as any).borrowing_records as any[]) as Book[]
 const STUDENTS = (persisted as any).students as Student[]
 const APP_USERS = (persisted as any).app_users as any[]
 const CARDS = (persisted as any).library_cards as LibraryCard[]
@@ -172,14 +206,14 @@ export async function fetchBooks() {
     try {
         const { data, error } = await supabase.from('books').select('*').order('created_at', { ascending: false })
         if (!error && data) {
-            const mapped = data.map(mapBookRow)
+            const mapped = reconcileBookAvailability(data.map(mapBookRow), BORROWING)
             saveMockData({ books: mapped, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
             return mapped
         }
     } catch {
         // fallback to local storage-backed mock data
     }
-    return BOOKS
+    return reconcileBookAvailability(BOOKS, BORROWING)
 }
 
 export async function fetchStudents() {
@@ -205,14 +239,15 @@ export async function fetchReturnedRecords() { return [] as BorrowingRecordWithD
 
 export async function upsertBook(book: Partial<Book> & Pick<Book, 'book_code' | 'title' | 'author' | 'category'>) {
     const isbn = String((book as any).isbn ?? book.book_code ?? '').trim() || `978-${Date.now()}`
+    const totalCopies = Number((book as any).copies ?? (book as any).total_copies ?? 1)
     const payload = {
         id: isUuid((book as any).id) ? (book as any).id : undefined,
         title: String(book.title).trim(),
         author: String(book.author).trim(),
         isbn,
         category: String(book.category).trim(),
-        total_copies: Number((book as any).copies ?? (book as any).total_copies ?? 1),
-        available_copies: Number((book as any).available ?? (book as any).available_copies ?? Number((book as any).copies ?? (book as any).total_copies ?? 1)),
+        total_copies: totalCopies,
+        available_copies: Number((book as any).available ?? (book as any).available_copies ?? totalCopies),
     }
 
     try {
@@ -270,49 +305,100 @@ export async function deleteBook(id: string) {
 export async function upsertStudent(student: Partial<Student> & Pick<Student, 'student_code' | 'name' | 'email' | 'course'>) {
     const normalizedStudentCode = String(student.student_code ?? student.email ?? '').trim() || `STU-${Date.now()}`
     const suppliedPasswordHash = String((student as any).password_hash ?? '').trim()
-    if (!suppliedPasswordHash) {
-        throw new Error('Student password is required when creating a login account.')
-    }
 
-    const payload = {
+    const baseStudentRecord = {
         id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
-        student_id: normalizedStudentCode,
         student_code: normalizedStudentCode,
-        full_name: student.name,
+        name: student.name,
+        email: student.email,
         course: student.course,
         year_level: (student as any).year_level ?? '1st Year',
         status: (student as any).status ?? 'active',
-        password_hash: suppliedPasswordHash,
     }
 
+    const loginPayload = suppliedPasswordHash
+        ? {
+            id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
+            student_id: normalizedStudentCode,
+            student_code: normalizedStudentCode,
+            full_name: student.name,
+            course: student.course,
+            year_level: (student as any).year_level ?? '1st Year',
+            status: (student as any).status ?? 'active',
+            password_hash: suppliedPasswordHash,
+        }
+        : null
+
     try {
-        console.debug('[supabase] upsertStudent payload', payload)
-        const { data, error } = await supabase
-            .from('student_login_accounts')
-            .upsert(payload, { onConflict: 'student_id' })
+        if (loginPayload) {
+            console.debug('[supabase] upsertStudent payload', loginPayload)
+            const { data, error } = await supabase
+                .from('student_login_accounts')
+                .upsert(loginPayload, { onConflict: 'student_id' })
+                .select()
+                .maybeSingle()
+
+            console.debug('[supabase] upsertStudent response', { data, error })
+
+            if (error) {
+                console.error('[supabase] upsertStudent error', error)
+                throw error
+            }
+
+            if (data) {
+                const saved = mapLoginRowToStudent(data)
+                await supabase.from('students').upsert([
+                    {
+                        id: saved.id,
+                        student_code: saved.student_code,
+                        name: saved.name,
+                        email: saved.email,
+                        course: saved.course,
+                        year_level: saved.year_level,
+                        status: saved.status,
+                    },
+                ], { onConflict: 'student_code' }).select().maybeSingle()
+
+                const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
+                if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, saved)
+                else STUDENTS.push(saved)
+                saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+                return saved
+            }
+        }
+
+        const { data: existingStudent, error: studentError } = await supabase
+            .from('students')
+            .upsert([
+                {
+                    id: baseStudentRecord.id,
+                    student_code: baseStudentRecord.student_code,
+                    name: baseStudentRecord.name,
+                    email: baseStudentRecord.email,
+                    course: baseStudentRecord.course,
+                    year_level: baseStudentRecord.year_level,
+                    status: baseStudentRecord.status,
+                },
+            ], { onConflict: 'student_code' })
             .select()
             .maybeSingle()
 
-        console.debug('[supabase] upsertStudent response', { data, error })
-
-        if (error) {
-            console.error('[supabase] upsertStudent error', error)
-            throw error
+        if (studentError) {
+            console.error('[mockApi] student profile upsert failed', studentError)
+            throw studentError
         }
 
-        if (data) {
-            const saved = mapLoginRowToStudent(data)
-            await supabase.from('students').upsert([
-                {
-                    id: saved.id,
-                    student_code: saved.student_code,
-                    name: saved.name,
-                    email: saved.email,
-                    course: saved.course,
-                    year_level: saved.year_level,
-                    status: saved.status,
-                },
-            ], { onConflict: 'student_code' }).select().maybeSingle()
+        if (existingStudent) {
+            const saved = {
+                ...baseStudentRecord,
+                id: existingStudent.id ?? baseStudentRecord.id,
+                student_code: existingStudent.student_code ?? baseStudentRecord.student_code,
+                name: existingStudent.name ?? baseStudentRecord.name,
+                email: existingStudent.email ?? baseStudentRecord.email,
+                course: existingStudent.course ?? baseStudentRecord.course,
+                year_level: existingStudent.year_level ?? baseStudentRecord.year_level,
+                status: existingStudent.status ?? baseStudentRecord.status,
+            } as Student
 
             const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
             if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, saved)
@@ -322,12 +408,11 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
         }
     } catch (err) {
         console.error('[mockApi] supabase upsertStudent failed, falling back to local', err)
-        throw err
     }
 
     const existing = STUDENTS.find((s) => s.student_code === normalizedStudentCode || s.email === student.email)
-    if (existing) Object.assign(existing, student)
-    else STUDENTS.push(student as Student)
+    if (existing) Object.assign(existing, { ...baseStudentRecord, ...(student as any), student_code: normalizedStudentCode, email: student.email })
+    else STUDENTS.push({ ...baseStudentRecord, ...(student as any), student_code: normalizedStudentCode, email: student.email } as Student)
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
     return STUDENTS.find((s) => s.student_code === normalizedStudentCode) as Student
 }
@@ -371,14 +456,31 @@ export async function issueLibraryCard(studentId: string, cardNo: string, expiry
 export async function updateLibraryCard(id: string, updates: Partial<LibraryCard>) { const c = CARDS.find(cc => cc.id === id); if (c) Object.assign(c, updates); saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS }); return CARDS.find(cc => cc.id === id) as LibraryCard }
 
 export async function deleteLibraryCard(id: string) { const i = CARDS.findIndex(c => c.id === id); if (i >= 0) { CARDS.splice(i, 1); saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS }) } }
+function normalizeBookReference(value: unknown): string {
+    return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function findBookMatch(target: string, books: any[] = BOOKS) {
+    const trimmedTarget = String(target ?? '').trim()
+    if (!trimmedTarget) return null
+
+    const targetNormalized = normalizeBookReference(trimmedTarget)
+    return books.find((book) => {
+        const candidates = [book?.id, book?.book_code, book?.isbn, book?.code, book?.title].filter((candidate) => candidate != null && String(candidate).trim() !== '')
+        return candidates.some((candidate) => {
+            const candidateText = String(candidate).trim()
+            const normalizedCandidate = normalizeBookReference(candidateText)
+            return normalizedCandidate === targetNormalized
+                || candidateText.toLowerCase() === trimmedTarget.toLowerCase()
+                || candidateText.replace(/-/g, '').toLowerCase() === trimmedTarget.replace(/-/g, '').toLowerCase()
+                || (typeof book?.title === 'string' && normalizeBookReference(book.title).includes(targetNormalized))
+        })
+    }) ?? null
+}
+
 export async function borrowBook(studentId: string, bookId: string, borrowPeriodDays = 14) {
     const student = STUDENTS.find((s) => s.id === studentId || s.student_code === studentId)
-    const book = BOOKS.find((b) =>
-        b.id === bookId ||
-        b.book_code === bookId ||
-        (b.isbn && b.isbn === bookId) ||
-        (typeof bookId === 'string' && b.title && b.title.toLowerCase() === bookId.toLowerCase())
-    )
+    const book = findBookMatch(bookId, BOOKS)
     if (!student) throw new Error('Student not found')
     if (!book) throw new Error(`Book not found: ${bookId}`)
     if ((book.available ?? 0) <= 0) throw new Error('Book is not available')
@@ -404,7 +506,14 @@ export async function borrowBook(studentId: string, bookId: string, borrowPeriod
     }
 
     BORROWING.unshift(record)
-    book.available = Math.max((book.available ?? 0) - 1, 0)
+    const nextAvailable = Math.max((book.available ?? 0) - 1, 0)
+    book.available = nextAvailable
+    if ('available_copies' in book) book.available_copies = nextAvailable
+    if ('total_copies' in book && typeof book.total_copies === 'number') {
+        const total = Number(book.total_copies)
+        book.available = Math.min(nextAvailable, total)
+        if ('available_copies' in book) book.available_copies = Math.min(nextAvailable, total)
+    }
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
     return record
 }
@@ -425,7 +534,9 @@ export async function processReturn(cardOrStudentId: string, bookQuery: string) 
     loan.return_date = returnDate
     loan.status = 'returned'
     loan.condition = 'Good'
-    book.available = (book.available ?? 0) + 1
+    const nextAvailable = Math.min((book.available ?? 0) + 1, Number(book.total_copies ?? book.copies ?? (book.available ?? 0) + 1))
+    book.available = nextAvailable
+    if ('available_copies' in book) book.available_copies = nextAvailable
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
     return loan
 }

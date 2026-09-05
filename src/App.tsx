@@ -33,6 +33,11 @@ function buildStudentEmailFromCode(value: string): string {
   return `${code.replace(/[^A-Z0-9]/g, '').toLowerCase()}@sjbcnl.local`
 }
 
+function isMissingTableError(error: any): boolean {
+  const message = String(error?.message ?? '')
+  return message.includes('Could not find the table') || message.includes('does not exist') || (message.includes('relation') && message.includes('does not exist'))
+}
+
 async function hashPassword(value: string): Promise<string> {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
@@ -232,6 +237,7 @@ const libraryClassificationCategories = [
 
 const PERSISTED_BOOKS_KEY = 'library-books-v1'
 const PERSISTED_STUDENTS_KEY = 'library-students-v1'
+const PERSISTED_BORROWED_BOOKS_KEY = 'library-borrowed-books-v1'
 
 function readPersistedState<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -356,6 +362,37 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
                     const internalEmail = buildStudentEmailFromCode(studentCode)
                     const passwordHash = await hashPassword(password)
 
+                    // Prevent overwriting seeded/demo login rows with the same student code.
+                    const existingLoginQuery = await supabase
+                      .from('student_login_accounts')
+                      .select('id, student_id, student_code')
+                      .or(`student_id.eq.${studentCode},student_code.eq.${studentCode}`)
+                      .limit(1)
+
+                    if (existingLoginQuery.error && !isMissingTableError(existingLoginQuery.error)) {
+                      throw new Error(existingLoginQuery.error.message ?? 'Unable to verify student ID availability.')
+                    }
+
+                    if ((existingLoginQuery.data ?? []).length > 0) {
+                      setError('A student account with this ID already exists. Please sign in instead.')
+                      return
+                    }
+
+                    const studentLookup = await supabase
+                      .from('students')
+                      .select('id, student_code')
+                      .eq('student_code', studentCode)
+                      .limit(1)
+
+                    if (studentLookup.error && !isMissingTableError(studentLookup.error)) {
+                      throw new Error(studentLookup.error.message ?? 'Unable to verify student profile availability.')
+                    }
+
+                    if ((studentLookup.data ?? []).length > 0) {
+                      setError('This student ID already exists in the records. Please sign in instead.')
+                      return
+                    }
+
                     // Create the student profile and login account directly in the app's custom tables.
                     // This avoids the fake-email Supabase Auth issue that requires email confirmation.
                     const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `id-${Date.now()}`
@@ -372,14 +409,26 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
                       password_hash: passwordHash,
                       status: 'active',
                     }
-                    const { data: loginRow, error: loginErr } = await supabase.from('student_login_accounts').upsert([loginAccountPayload], { onConflict: 'student_id' }).select().maybeSingle()
-                    if (loginErr) upsertErrors.push(loginErr.message ?? JSON.stringify(loginErr))
+                    const { error: loginErr } = await supabase.from('student_login_accounts').insert([loginAccountPayload])
+                    if (loginErr) {
+                      if (isMissingTableError(loginErr)) {
+                        setError('The student login table is not available yet. Please run the Supabase schema migration first.')
+                        return
+                      }
+                      upsertErrors.push(loginErr.message ?? JSON.stringify(loginErr))
+                    }
 
-                    const { error: studentErr } = await supabase.from('students').upsert([studentPayload], { onConflict: 'student_code' })
-                    if (studentErr) upsertErrors.push(studentErr.message ?? JSON.stringify(studentErr))
+                    const { error: studentErr } = await supabase.from('students').insert([studentPayload])
+                    if (studentErr) {
+                      if (isMissingTableError(studentErr)) {
+                        console.warn('[signup] students table missing; continuing without profile row')
+                      } else {
+                        upsertErrors.push(studentErr.message ?? JSON.stringify(studentErr))
+                      }
+                    }
 
                     if (upsertErrors.length > 0) {
-                      console.error('[signup] upsert errors', upsertErrors)
+                      console.error('[signup] insert errors', upsertErrors)
                       setError(`Account creation failed: ${upsertErrors.join('; ')}`)
                       return
                     }
@@ -862,8 +911,8 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
       title: r.title ?? '',
       author: r.author ?? '',
       category: r.category ?? '',
-      copies: Number(r.totalCopies ?? r.copies ?? 1),
-      available: Number(r.availableCopies ?? r.available ?? (r.totalCopies ?? r.copies ?? 1)),
+      copies: Number(r.total_copies ?? r.totalCopies ?? r.copies ?? 1),
+      available: Number(r.available_copies ?? r.availableCopies ?? r.available ?? (r.total_copies ?? r.totalCopies ?? r.copies ?? 1)),
     }))
     : searchResults
 
@@ -918,6 +967,25 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
       setError(null)
       const bookReference = String(borrowModal.reference || borrowModal.isbn || borrowModal.id || '').trim()
       await borrowBook(borrowStudentId, bookReference || String(borrowModal.id || ''))
+
+      const borrowDate = new Date().toISOString().slice(0, 10)
+      const dueDate = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10)
+      const existing = readPersistedState<PersistedBorrowEntry[]>(PERSISTED_BORROWED_BOOKS_KEY, [])
+      const nextEntries: PersistedBorrowEntry[] = [
+        {
+          id: String(borrowModal.id ?? `${borrowStudentId}-${Date.now()}`),
+          title: borrowModal.title,
+          author: borrowModal.author,
+          borrowDate,
+          dueDate,
+          status: 'active',
+          studentId: borrowStudentId,
+          cardNo: libraryCardNo,
+        },
+        ...existing.filter((entry) => !(entry.studentId === borrowStudentId && entry.title === borrowModal.title)),
+      ]
+      savePersistedState(PERSISTED_BORROWED_BOOKS_KEY, nextEntries)
+      window.dispatchEvent(new Event('lms-borrow-updated'))
       setConfirmed(true)
     } catch (e: any) {
       setError(e?.message || 'Unable to borrow this book right now.')
@@ -1112,7 +1180,16 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
 }
 
 // ─── Borrower Card Component ───────────────────────────────────────────────────
-type BorrowEntry = typeof borrowedBooks[0]
+type BorrowEntry = {
+  id: string | number
+  title: string
+  author: string
+  borrowDate: string
+  dueDate: string
+  status: string
+  studentId?: string
+  cardNo?: string
+}
 
 function BorrowerCardSlip({
   book,
@@ -1240,8 +1317,11 @@ function BorrowerCardSlip({
   )
 }
 
+type PersistedBorrowEntry = BorrowEntry
+
 function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [selected, setSelected] = useState<BorrowEntry | null>(null)
+  const [rows, setRows] = useState<PersistedBorrowEntry[]>(() => readPersistedState(PERSISTED_BORROWED_BOOKS_KEY, []))
   const student = {
     name: userProfile?.name ?? 'Student',
     studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
@@ -1249,12 +1329,27 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
     cardNo: userProfile?.card ?? 'N/A',
   }
 
+  useEffect(() => {
+    const syncRows = () => {
+      const stored = readPersistedState<PersistedBorrowEntry[]>(PERSISTED_BORROWED_BOOKS_KEY, [])
+      const currentStudentId = String(userProfile?.studentId ?? userProfile?.studentCode ?? '').trim()
+      const filtered = currentStudentId
+        ? stored.filter((entry) => String(entry.studentId ?? '').trim() === currentStudentId)
+        : stored
+      setRows(filtered)
+    }
+
+    syncRows()
+    window.addEventListener('lms-borrow-updated', syncRows)
+    return () => window.removeEventListener('lms-borrow-updated', syncRows)
+  }, [userProfile?.studentId, userProfile?.studentCode])
+
   return (
     <div>
       <PageHeader title="My Borrowed Books" subtitle="Track your active loans and due dates." />
       <Table headers={['Book Title', 'Author', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
-        {borrowedBooks.map((b) => (
-          <Tr key={b.id}>
+        {rows.map((b) => (
+          <Tr key={`${b.studentId ?? 'student'}-${b.id}`}>
             <Td className="font-medium text-gray-900">{b.title}</Td>
             <Td>{b.author}</Td>
             <Td>{b.borrowDate}</Td>
@@ -1490,8 +1585,8 @@ function AdminBooks() {
       author: r.author ?? '',
       publisher: r.publisher ?? '',
       category: r.category ?? '',
-      copies: Number(r.totalCopies ?? r.copies ?? 1),
-      available: Number(r.availableCopies ?? r.available ?? (r.totalCopies ?? r.copies ?? 1)),
+      copies: Number(r.total_copies ?? r.totalCopies ?? r.copies ?? 1),
+      available: Number(r.available_copies ?? r.availableCopies ?? r.available ?? (r.total_copies ?? r.totalCopies ?? r.copies ?? 1)),
       rack: r.rack ?? 'R1',
       updatedOn: new Date().toISOString(),
       cover_url: r.coverUrl ?? r.cover_url ?? null,
