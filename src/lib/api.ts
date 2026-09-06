@@ -136,6 +136,117 @@ async function passwordMatchesStoredValue(storedValue: unknown, inputPassword: s
     return false
 }
 
+export async function requestReturn(recordId: string, requestedReturnDate?: string, remark?: string) {
+    const returnDate = String(requestedReturnDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10)
+    const payload: Record<string, any> = {
+        return_date: returnDate,
+        status: 'return_requested',
+    }
+
+    const notes = String(remark ?? '').trim()
+    if (notes) {
+        payload.condition = notes
+    } else {
+        payload.condition = null
+    }
+
+    const { data, error } = await supabase
+        .from('borrowing_records')
+        .update(payload)
+        .eq('id', recordId)
+        .select('*')
+        .maybeSingle()
+
+    if (error) throw new Error(error.message)
+    return data
+}
+
+export async function processReturn(recordIdOrCard: string, finalReturnDate?: string, finalRemark?: string) {
+    const recordId = String(recordIdOrCard ?? '').trim()
+
+    if (recordId && looksLikeUuid(recordId)) {
+        const { data: existingRecord, error: lookupError } = await supabase
+            .from('borrowing_records')
+            .select('*')
+            .eq('id', recordId)
+            .maybeSingle()
+
+        if (lookupError) throw new Error(lookupError.message)
+        if (!existingRecord) throw new Error('Borrow record not found.')
+
+        const returnDate = String(finalReturnDate ?? existingRecord.return_date ?? new Date().toISOString().slice(0, 10)).slice(0, 10)
+        const tempRemark = String(finalRemark ?? existingRecord.condition ?? 'Returned').trim() || 'Returned.'
+
+        const { data: updatedRecord, error: updateError } = await supabase
+            .from('borrowing_records')
+            .update({
+                return_date: returnDate,
+                status: 'returned',
+                condition: tempRemark,
+            })
+            .eq('id', recordId)
+            .select('*')
+            .maybeSingle()
+
+        if (updateError) throw new Error(updateError.message)
+
+        if (updatedRecord?.book_id) {
+            const { data: bookRow, error: bookLookupError } = await supabase
+                .from('books')
+                .select('id, available_copies')
+                .eq('id', updatedRecord.book_id)
+                .maybeSingle()
+
+            if (!bookLookupError && bookRow) {
+                const currentAvailable = Number(bookRow.available_copies ?? 0)
+                await supabase
+                    .from('books')
+                    .update({ available_copies: Math.max(currentAvailable + 1, 0) })
+                    .eq('id', bookRow.id)
+            }
+        }
+
+        return updatedRecord
+    }
+
+    if (!finalRemark) {
+        throw new Error('Return requires either a borrowing record ID or a student ID and book reference.')
+    }
+
+    const cardOrStudentValue = recordIdOrCard.trim()
+    const bookQuery = String(finalRemark ?? '').trim()
+    const { data: loginRows, error: loginErr } = await supabase.from('student_login_accounts').select('*').limit(200)
+    if (loginErr) throw loginErr
+
+    const matchedStudent = (loginRows ?? []).find((row: any) => {
+        const values = [row?.student_id, row?.student_code, row?.id, row?.full_name].filter(Boolean)
+        return values.some((value) => String(value).trim().toLowerCase() === cardOrStudentValue.trim().toLowerCase())
+    })
+
+    if (!matchedStudent) throw new Error('Student not found. Please choose a valid student record.')
+
+    const { data: allBooks, error: bookErr } = await supabase.from('books').select('*').limit(200)
+    if (bookErr) throw bookErr
+
+    const matchedBook = findBookMatch(allBooks ?? [], bookQuery)
+    if (!matchedBook) throw new Error(`Book not found: ${bookQuery}`)
+
+    const { data: activeRecord, error: recordErr } = await supabase
+        .from('borrowing_records')
+        .select('*')
+        .eq('student_id', matchedStudent.id)
+        .eq('book_id', matchedBook.id)
+        .is('return_date', null)
+        .order('borrow_date', { ascending: false })
+        .maybeSingle()
+
+    if (recordErr) throw new Error(recordErr.message)
+    if (!activeRecord) throw new Error('No active loan found for this student and book.')
+
+    const updated = await processReturn(String(activeRecord.id), finalReturnDate, finalRemark)
+    return updated
+}
+
 export * from './mockApi'
 
 export async function fetchStudentBorrowingRecords(studentId?: string) {

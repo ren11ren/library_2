@@ -5,6 +5,7 @@ import {
   loadDashboardData,
   borrowBook,
   returnBook,
+  requestReturn,
   processReturn,
   saveSettings,
   fetchSettings,
@@ -669,15 +670,72 @@ function Td({ children, className = '' }: { children: ReactNode; className?: str
 
 // ─── Student Views ─────────────────────────────────────────────────────────────
 
-const allBorrowedEntries: Array<{ book: string; borrowDate: string; returnDate: string; status: string }> = []
+async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ book: string; borrowDate: string; returnDate: string; status: string }>> {
+  const resolvedStudentKey = String(studentKey ?? '').trim()
+  if (!resolvedStudentKey) return []
+
+  try {
+    const { data: loginRows, error: loginError } = await supabase.from('student_login_accounts').select('*').limit(200)
+    if (loginError) throw loginError
+
+    const loginRow = (loginRows ?? []).find((row: any) => {
+      const values = [row?.id, row?.student_id, row?.student_code, row?.full_name, row?.email]
+      return values.some((value) => {
+        const normalizedValue = String(value ?? '').trim().toLowerCase()
+        const normalizedKey = resolvedStudentKey.toLowerCase()
+        return normalizedValue === normalizedKey || normalizedValue === normalizeStudentCode(resolvedStudentKey).toLowerCase()
+      })
+    })
+
+    if (!loginRow) return []
+
+    const { data: recordRows, error: recordError } = await supabase
+      .from('borrowing_records')
+      .select('*')
+      .eq('student_id', loginRow.id)
+      .order('borrow_date', { ascending: false })
+
+    if (recordError) throw recordError
+
+    const bookIds = [...new Set((recordRows ?? []).map((row: any) => String(row?.book_id ?? '').trim()).filter(Boolean))]
+    let bookMap = new Map<string, any>()
+
+    if (bookIds.length > 0) {
+      const { data: bookRows, error: bookError } = await supabase.from('books').select('*').in('id', bookIds)
+      if (!bookError) {
+        bookMap = new Map((bookRows ?? []).map((book: any) => [String(book.id ?? '').trim(), book]))
+      }
+    }
+
+    return (recordRows ?? []).map((record: any) => {
+      const book = bookMap.get(String(record?.book_id ?? '').trim())
+      const status = String(record?.status ?? '').trim() || (record?.return_date ? 'returned' : 'active')
+      return {
+        book: book?.title ?? 'Unknown book',
+        borrowDate: record?.borrow_date ?? 'N/A',
+        returnDate: record?.return_date ?? 'Pending',
+        status,
+      }
+    })
+  } catch (error) {
+    console.error('Unable to load borrowing log for student.', error)
+    return []
+  }
+}
 
 function StudentBorrowerCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+  const [allBorrowedEntries, setAllBorrowedEntries] = useState<Array<{ book: string; borrowDate: string; returnDate: string; status: string }>>([])
   const student = {
     name: userProfile?.name ?? 'Student',
     studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
     course: userProfile?.course ?? 'Unassigned',
     cardNo: userProfile?.card ?? 'N/A',
   }
+
+  useEffect(() => {
+    const studentKey = String(userProfile?.studentId ?? userProfile?.studentCode ?? userProfile?.email ?? '').trim()
+    void fetchStudentBorrowingLog(studentKey).then(setAllBorrowedEntries)
+  }, [userProfile?.studentId, userProfile?.studentCode, userProfile?.email])
 
   return (
     <div>
@@ -1328,6 +1386,8 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
   const [selected, setSelected] = useState<BorrowEntry | null>(null)
   const [rows, setRows] = useState<PersistedBorrowEntry[]>([])
   const [returningId, setReturningId] = useState<string | null>(null)
+  const [returnRequestId, setReturnRequestId] = useState<string | null>(null)
+  const [returnRequestDate, setReturnRequestDate] = useState<string>(new Date().toISOString().slice(0, 10))
   const student = {
     name: userProfile?.name ?? 'Student',
     studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
@@ -1360,8 +1420,10 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
   const handleReturnBook = async (recordId: string) => {
     try {
       setReturningId(recordId)
-      await returnBook(recordId)
+      await requestReturn(recordId, returnRequestDate)
       setRows((current) => current.filter((row) => String(row.id) !== String(recordId)))
+      setReturnRequestId(null)
+      setReturnRequestDate(new Date().toISOString().slice(0, 10))
       window.dispatchEvent(new Event('lms-borrow-updated'))
     } catch (error: any) {
       console.error('Return book failed', error)
@@ -1374,6 +1436,26 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
   return (
     <div>
       <PageHeader title="My Borrowed Books" subtitle="Track your active loans and due dates." />
+      {returnRequestId && (
+        <div className="mb-5 rounded-xl border border-green-200 bg-white p-5 shadow-sm">
+          <h3 className="font-semibold text-green-900 mb-4">Request Return</h3>
+          <div className="grid gap-4 md:grid-cols-1">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Return Date</label>
+              <input type="date" value={returnRequestDate} onChange={(e) => setReturnRequestDate(e.target.value)} className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
+            </div>
+            <p className="text-sm text-gray-600">The admin will add the final remark after reviewing the returned book.</p>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button onClick={() => handleReturnBook(returnRequestId)} disabled={returningId === returnRequestId} className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
+              {returningId === returnRequestId ? 'Sending...' : 'Send to Admin'}
+            </button>
+            <button onClick={() => { setReturnRequestId(null); setReturnRequestDate(new Date().toISOString().slice(0, 10)); }} className="px-4 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowed books yet for this student.</div>
       ) : (
@@ -1395,11 +1477,14 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
                   Borrower Card
                 </button>
                 <button
-                  onClick={() => handleReturnBook(String(b.id))}
+                  onClick={() => {
+                    setReturnRequestId(String(b.id))
+                    setReturnRequestDate(new Date().toISOString().slice(0, 10))
+                  }}
                   disabled={returningId === String(b.id)}
                   className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {returningId === String(b.id) ? 'Returning...' : 'Return'}
+                  {returningId === String(b.id) ? 'Sending...' : 'Return'}
                 </button>
               </Td>
             </Tr>
@@ -1420,21 +1505,47 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
   )
 }
 
-function BorrowingHistory() {
+function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+  const [historyRows, setHistoryRows] = useState<Array<{ title: string; author: string; borrowDate: string; returnDate: string; status: string }>>([])
+
+  useEffect(() => {
+    const studentKey = String(userProfile?.studentId ?? userProfile?.studentCode ?? userProfile?.email ?? '').trim()
+
+    async function loadHistory() {
+      const entries = await fetchStudentBorrowingLog(studentKey)
+      setHistoryRows(entries.map((entry) => ({
+        title: entry.book,
+        author: 'Unknown author',
+        borrowDate: entry.borrowDate,
+        returnDate: entry.returnDate,
+        status: entry.status,
+      })))
+    }
+
+    void loadHistory()
+    const handleUpdated = () => { void loadHistory() }
+    window.addEventListener('lms-borrow-updated', handleUpdated)
+    return () => window.removeEventListener('lms-borrow-updated', handleUpdated)
+  }, [userProfile?.studentId, userProfile?.studentCode, userProfile?.email])
+
   return (
     <div>
       <PageHeader title="Borrowing History" subtitle="Your complete library borrowing history." />
-      <Table headers={['Book Title', 'Author', 'Borrow Date', 'Return Date', 'Status']}>
-        {historyBooks.map((b, i) => (
-          <Tr key={i}>
-            <Td className="font-medium text-gray-900">{b.title}</Td>
-            <Td>{b.author}</Td>
-            <Td>{b.borrowDate}</Td>
-            <Td>{b.returnDate}</Td>
-            <Td><StatusBadge status={b.status} /></Td>
-          </Tr>
-        ))}
-      </Table>
+      {historyRows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowing history yet.</div>
+      ) : (
+        <Table headers={['Book Title', 'Author', 'Borrow Date', 'Return Date', 'Status']}>
+          {historyRows.map((b, i) => (
+            <Tr key={`${b.title}-${b.borrowDate}-${i}`}>
+              <Td className="font-medium text-gray-900">{b.title}</Td>
+              <Td>{b.author}</Td>
+              <Td>{b.borrowDate}</Td>
+              <Td>{b.returnDate}</Td>
+              <Td><StatusBadge status={b.status} /></Td>
+            </Tr>
+          ))}
+        </Table>
+      )}
     </div>
   )
 }
@@ -2527,66 +2638,108 @@ function AdminBorrowingRecords() {
 }
 
 function AdminReturns() {
-  const [cardNo, setCardNo] = useState('')
-  const [bookQuery, setBookQuery] = useState('')
-  const [busy, setBusy] = useState(false)
+  const { data: borrowRows } = useSupabaseRealtime('borrowing_records')
+  const { data: bookRows } = useSupabaseRealtime('books')
+  const [loginRows, setLoginRows] = useState<any[]>([])
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, { returnDate: string; remark: string }>>({})
 
-  async function handleProcessReturn() {
-    if (!cardNo.trim() || !bookQuery.trim()) {
-      setMessage('Card number and book details are required.')
-      return
+  useEffect(() => {
+    async function loadLoginRows() {
+      const { data, error } = await supabase.from('student_login_accounts').select('*').limit(200)
+      if (!error) setLoginRows((data ?? []).map((row: any) => mapKeysToCamel(row)))
     }
 
+    void loadLoginRows()
+  }, [])
+
+  const activeReturns = (borrowRows ?? [])
+    .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested' || (!record.return_date && !(record.status ?? '').toLowerCase().includes('returned')))
+    .map((record: any) => {
+      const recordStudentId = String(record?.studentId ?? record?.student_id ?? '').trim()
+      const student = (loginRows ?? []).find((item: any) => {
+        const itemId = String(item?.id ?? '').trim()
+        const itemStudentId = String(item?.studentId ?? item?.student_id ?? '').trim()
+        const itemStudentCode = String(item?.studentCode ?? item?.student_code ?? '').trim()
+        return itemId === recordStudentId || itemStudentId === recordStudentId || itemStudentCode === recordStudentId
+      })
+      const book = (bookRows ?? []).find((item: any) => String(item?.id ?? '').trim() === String(record?.bookId ?? record?.book_id ?? '').trim())
+
+      const pendingDate = String(record?.return_date ?? record?.returnDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10)
+      const pendingRemark = String(record?.condition ?? '').trim()
+
+      return {
+        id: record.id,
+        student: student?.fullName ?? student?.full_name ?? student?.studentCode ?? 'Unknown student',
+        card: student?.studentCode ?? student?.student_code ?? 'N/A',
+        book: book?.title ?? 'Unknown book',
+        due: record.dueDate ?? record.due_date ?? 'N/A',
+        returnDate: pendingDate,
+        remark: pendingRemark,
+      }
+    })
+
+  async function handleConfirmReturn(recordId: string, returnDate?: string, remark?: string) {
     try {
-      setBusy(true)
+      setBusyId(recordId)
       setMessage(null)
-      await processReturn(cardNo, bookQuery)
-      setMessage('Return recorded and inventory updated.')
-      setCardNo('')
-      setBookQuery('')
+      await processReturn(recordId, String(returnDate ?? '').trim() || undefined, String(remark ?? '').trim() || undefined)
+      setMessage('Return confirmed and inventory updated.')
     } catch (err: any) {
-      setMessage(err?.message || 'Unable to process this return.')
+      setMessage(err?.message || 'Unable to confirm this return.')
     } finally {
-      setBusy(false)
+      setBusyId(null)
     }
   }
 
   return (
     <div>
-      <PageHeader title="Returns" subtitle="Process book returns and record them." />
-      <div className="max-w-lg bg-white rounded-xl border border-green-100 shadow-sm p-6 mb-6">
-        <h3 className="font-semibold text-green-900 mb-4">Process Return</h3>
-        <div className="flex flex-col gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Library Card No. / Student ID</label>
-            <input value={cardNo} onChange={(e) => setCardNo(e.target.value)} type="text" placeholder="Enter library card number" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Book ID or Title</label>
-            <input value={bookQuery} onChange={(e) => setBookQuery(e.target.value)} type="text" placeholder="Enter book code or title" className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition" />
-          </div>
-          <button onClick={handleProcessReturn} disabled={busy} className="py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
-            {busy ? 'Processing...' : 'Process Return'}
-          </button>
-          {message && <div className="text-sm text-green-700">{message}</div>}
-        </div>
-      </div>
-      <Table headers={['Student', 'Card No.', 'Book', 'Due Date', 'Return Date', 'Condition']}>
-        {[
-          { student: 'Student A', card: 'N/A', book: 'Book Title', due: 'N/A', returned: 'N/A', condition: 'Pending' },
-          { student: 'Student B', card: 'N/A', book: 'Book Title', due: 'N/A', returned: 'N/A', condition: 'Pending' },
-        ].map((r, i) => (
-          <Tr key={i}>
-            <Td className="font-medium">{r.student}</Td>
-            <Td className="font-mono text-xs text-green-700">{r.card}</Td>
-            <Td>{r.book}</Td>
-            <Td>{r.due}</Td>
-            <Td>{r.returned}</Td>
-            <Td><span className="px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded-md font-medium">{r.condition}</span></Td>
-          </Tr>
-        ))}
-      </Table>
+      <PageHeader title="Returns" subtitle="Review active loans and confirm returns from the admin side." />
+      {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
+
+      {activeReturns.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No active returns pending confirmation.</div>
+      ) : (
+        <Table headers={['Student', 'Card No.', 'Book', 'Due Date', 'Return Date', 'Remark', 'Action']}>
+          {activeReturns.map((row) => {
+            const currentDraft = drafts[row.id] ?? { returnDate: row.returnDate, remark: row.remark }
+            return (
+              <Tr key={row.id}>
+                <Td className="font-medium text-gray-900">{row.student}</Td>
+                <Td className="font-mono text-xs text-green-700">{row.card}</Td>
+                <Td>{row.book}</Td>
+                <Td>{row.due}</Td>
+                <Td>
+                  <input
+                    type="date"
+                    value={currentDraft.returnDate}
+                    onChange={(e) => setDrafts((prev) => ({ ...prev, [String(row.id)]: { ...currentDraft, returnDate: e.target.value } }))}
+                    className="w-full min-w-[120px] px-2 py-1.5 rounded-md border border-gray-200 text-xs focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  />
+                </Td>
+                <Td>
+                  <input
+                    value={currentDraft.remark}
+                    onChange={(e) => setDrafts((prev) => ({ ...prev, [String(row.id)]: { ...currentDraft, remark: e.target.value } }))}
+                    placeholder="Remark"
+                    className="w-full min-w-[150px] px-2 py-1.5 rounded-md border border-gray-200 text-xs focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  />
+                </Td>
+                <Td>
+                  <button
+                    onClick={() => handleConfirmReturn(String(row.id), currentDraft.returnDate, currentDraft.remark)}
+                    disabled={busyId === row.id}
+                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
+                  >
+                    {busyId === row.id ? 'Confirming...' : 'Confirm Return'}
+                  </button>
+                </Td>
+              </Tr>
+            )
+          })}
+        </Table>
+      )}
     </div>
   )
 }
@@ -3026,7 +3179,7 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
       case 'dashboard': return <StudentDashboard onNavigate={setView} />
       case 'search': return <SearchBooks studentId={studentId} userProfile={userProfile} />
       case 'borrowed': return <MyBorrowedBooks userProfile={userProfile} />
-      case 'history': return <BorrowingHistory />
+      case 'history': return <BorrowingHistory userProfile={userProfile} />
       case 'borrower-card': return <StudentBorrowerCard userProfile={userProfile} />
       case 'card': return <LibraryCard userProfile={userProfile} />
       case 'profile': return <Profile userProfile={userProfile} />
