@@ -171,6 +171,14 @@ CREATE TABLE IF NOT EXISTS public.settings (
   admin_email TEXT
 );
 
+CREATE TABLE IF NOT EXISTS public.library_announcements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  text TEXT NOT NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.borrow_records ENABLE ROW LEVEL SECURITY;
@@ -180,6 +188,7 @@ ALTER TABLE public.library_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.borrowing_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.library_announcements ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Books are viewable by everyone" ON public.books;
 CREATE POLICY "Books are viewable by everyone"
@@ -357,6 +366,31 @@ ON public.settings
 FOR UPDATE
 USING (true)
 WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Announcements are viewable by everyone" ON public.library_announcements;
+CREATE POLICY "Announcements are viewable by everyone"
+ON public.library_announcements
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Announcements are writable by everyone" ON public.library_announcements;
+CREATE POLICY "Announcements are writable by everyone"
+ON public.library_announcements
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Announcements are updatable by everyone" ON public.library_announcements;
+CREATE POLICY "Announcements are updatable by everyone"
+ON public.library_announcements
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Announcements are deletable by everyone" ON public.library_announcements;
+CREATE POLICY "Announcements are deletable by everyone"
+ON public.library_announcements
+FOR DELETE
+USING (true);
 
 INSERT INTO public.books (id, title, author, isbn, category, total_copies, available_copies, created_at)
 VALUES

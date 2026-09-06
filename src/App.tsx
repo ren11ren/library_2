@@ -240,6 +240,14 @@ const libraryClassificationCategories = [
 const PERSISTED_BOOKS_KEY = 'library-books-v1'
 const PERSISTED_STUDENTS_KEY = 'library-students-v1'
 const PERSISTED_BORROWED_BOOKS_KEY = 'library-borrowed-books-v1'
+const ANNOUNCEMENTS_KEY = 'library-announcements-v1'
+
+type LibraryAnnouncement = {
+  id: string
+  title: string
+  date: string
+  text: string
+}
 
 function readPersistedState<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -261,6 +269,49 @@ function savePersistedState<T>(key: string, value: T) {
     window.localStorage.setItem(key, JSON.stringify(value))
   } catch {
     // ignore write failures from restricted browsers or storage full errors
+  }
+}
+
+async function loadAnnouncements() {
+  try {
+    const { data, error } = await supabase
+      .from('library_announcements')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (!error && Array.isArray(data)) {
+      return (data as any[]).map((item: any) => ({
+        id: String(item.id ?? item.uuid ?? `announcement-${Date.now()}`),
+        title: String(item.title ?? 'Library notice'),
+        date: String(item.date ?? item.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)),
+        text: String(item.text ?? item.message ?? ''),
+      }))
+    }
+  } catch {
+    // ignore and fall back to local browser storage
+  }
+
+  return readPersistedState<LibraryAnnouncement[]>(ANNOUNCEMENTS_KEY, [])
+}
+
+async function saveAnnouncements(announcements: LibraryAnnouncement[]) {
+  savePersistedState(ANNOUNCEMENTS_KEY, announcements)
+
+  try {
+    const rows = announcements.map((item) => ({
+      id: item.id,
+      title: item.title,
+      text: item.text,
+      date: item.date,
+      created_at: new Date().toISOString(),
+    }))
+
+    const { error } = await supabase.from('library_announcements').upsert(rows, { onConflict: 'id' })
+    if (error) {
+      console.warn('Announcement DB save fallback used.', error)
+    }
+  } catch (error) {
+    console.warn('Announcement DB save fallback used.', error)
   }
 }
 
@@ -295,6 +346,20 @@ function deriveBookAvailability(book: any, borrowRows: any[] = []) {
   if (ifBorrowHistoryExists) return realAvailability
   if (Number.isFinite(explicitAvailable) && explicitAvailable >= 0) return Math.max(0, Math.min(explicitAvailable, totalCopies))
   return totalCopies
+}
+
+function inferLoanStatus(dueDate?: string) {
+  if (!dueDate) return 'active'
+
+  const due = new Date(`${dueDate}T00:00:00`)
+  if (Number.isNaN(due.getTime())) return 'active'
+
+  const today = new Date()
+  const diffDays = Math.ceil((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24))
+
+  if (diffDays > 0) return 'overdue'
+  if (diffDays >= -3) return 'due-soon'
+  return 'active'
 }
 
 // ─── Status Badge ──────────────────────────────────────────────────────────────
@@ -670,7 +735,7 @@ function Td({ children, className = '' }: { children: ReactNode; className?: str
 
 // ─── Student Views ─────────────────────────────────────────────────────────────
 
-async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ book: string; borrowDate: string; returnDate: string; status: string }>> {
+async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ book: string; author: string; borrowDate: string; returnDate: string; status: string }>> {
   const resolvedStudentKey = String(studentKey ?? '').trim()
   if (!resolvedStudentKey) return []
 
@@ -712,6 +777,7 @@ async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ bo
       const status = String(record?.status ?? '').trim() || (record?.return_date ? 'returned' : 'active')
       return {
         book: book?.title ?? 'Unknown book',
+        author: book?.author ?? 'Unknown author',
         borrowDate: record?.borrow_date ?? 'N/A',
         returnDate: record?.return_date ?? 'Pending',
         status,
@@ -724,7 +790,7 @@ async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ bo
 }
 
 function StudentBorrowerCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
-  const [allBorrowedEntries, setAllBorrowedEntries] = useState<Array<{ book: string; borrowDate: string; returnDate: string; status: string }>>([])
+  const [allBorrowedEntries, setAllBorrowedEntries] = useState<Array<{ book: string; author: string; borrowDate: string; returnDate: string; status: string }>>([])
   const student = {
     name: userProfile?.name ?? 'Student',
     studentId: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
@@ -740,122 +806,165 @@ function StudentBorrowerCard({ userProfile }: { userProfile?: { name?: string; s
   return (
     <div>
       <PageHeader title="Borrower Card" subtitle="Your official library borrower record card." />
-      <div className="max-w-lg">
-        {/* Card */}
-        <div className="bg-white rounded-2xl border-2 border-green-200 overflow-hidden shadow-sm">
-          {/* Header band */}
-          <div className="bg-green-700 px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-2.5 text-white">
-              <Icons.Library />
-              <div>
-                <div className="font-bold text-sm leading-tight">Campus Library</div>
-                <div className="text-green-200 text-xs tracking-wide">BORROWER'S CARD</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-green-200 text-xs">Card No.</div>
-              <div className="font-mono font-bold text-white text-sm">{student.cardNo}</div>
-            </div>
-          </div>
-
-          {/* Student info strip */}
-          <div className="px-6 py-4 bg-green-50 border-b border-green-100 grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-            <div>
-              <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">Name</span>
-              <span className="font-semibold text-green-900">{student.name}</span>
-            </div>
-            <div>
-              <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">Student ID</span>
-              <span className="font-mono text-gray-700">{student.studentId}</span>
-            </div>
-            <div>
-              <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">Course</span>
-              <span className="text-gray-700">{student.course}</span>
-            </div>
-            <div>
-              <span className="text-xs text-gray-400 uppercase tracking-wide font-medium block">AY</span>
-              <span className="text-gray-700">N/A</span>
-            </div>
-          </div>
-
-          {/* Borrowing log table */}
-          <div className="px-0">
-            <div className="grid grid-cols-12 px-5 py-2 bg-green-800 text-white text-xs font-semibold uppercase tracking-wide">
-              <div className="col-span-1 text-center">#</div>
-              <div className="col-span-5 pl-2">Book Title</div>
-              <div className="col-span-3 text-center">Date Borrowed</div>
-              <div className="col-span-3 text-center">Date Returned</div>
-            </div>
-            {allBorrowedEntries.map((entry, i) => (
-              <div
-                key={i}
-                className={`grid grid-cols-12 px-5 py-2.5 text-xs border-b border-green-50 items-center ${i % 2 === 0 ? 'bg-white' : 'bg-green-50/60'
-                  }`}
-              >
-                <div className="col-span-1 text-center text-gray-400 font-mono">{i + 1}</div>
-                <div className="col-span-5 pl-2 font-medium text-gray-800 leading-snug">{entry.book}</div>
-                <div className="col-span-3 text-center text-gray-500">{entry.borrowDate}</div>
-                <div className={`col-span-3 text-center font-medium ${entry.status === 'overdue'
-                  ? 'text-red-600'
-                  : entry.status === 'due-soon'
-                    ? 'text-orange-500'
-                    : entry.status === 'active'
-                      ? 'text-green-600'
-                      : 'text-gray-500'
-                  }`}>
-                  {entry.status === 'active' || entry.status === 'due-soon' || entry.status === 'overdue'
-                    ? entry.returnDate
-                    : entry.returnDate}
+      <div className="max-w-6xl">
+        <div className="bg-[#d9d9d9] text-black border border-black/35 print:shadow-none" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+          <div className="grid grid-cols-[46px_minmax(0,1fr)_46px] min-h-[640px]">
+            <div className="border-r border-black/40 bg-[#d5d5d5] px-1 py-3">
+              <div className="flex h-full flex-col items-center justify-between text-[8px] font-bold uppercase tracking-[0.2em] text-black">
+                <div className="w-7 h-7 rounded-full border border-black/60 bg-white/20 flex items-center justify-center text-[8px] font-black">SJ</div>
+                <div className="flex-1 flex items-center justify-center">
+                  <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Student No.</div>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Course &amp; Year</div>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Academic Year</div>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>Signature</div>
                 </div>
               </div>
-            ))}
-            {/* Empty ruled lines */}
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={`empty-${i}`} className={`grid grid-cols-12 px-5 py-2.5 border-b border-green-50 ${i % 2 === 0 ? 'bg-white' : 'bg-green-50/60'}`}>
-                <div className="col-span-1 text-center text-gray-300 text-xs font-mono">{allBorrowedEntries.length + i + 1}</div>
-                <div className="col-span-5 pl-2 border-b border-dashed border-gray-200 h-4" />
-                <div className="col-span-3 border-b border-dashed border-gray-200 mx-2 h-4" />
-                <div className="col-span-3 border-b border-dashed border-gray-200 mx-2 h-4" />
+            </div>
+
+            <div className="bg-[#d9d9d9] px-4 py-4">
+              <div className="flex items-center justify-between border-b border-black/40 pb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-black">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px]">S J</span>
+                  <span>Saint John Bosco College</span>
+                </div>
+                <span className="text-right">Date Borrowed</span>
               </div>
-            ))}
-          </div>
 
-          {/* Legend & signature strip */}
-          <div className="px-6 py-3 bg-green-50 border-t border-green-100 flex items-center justify-between">
-            <div className="flex items-center gap-3 text-xs text-gray-500">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Active</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />Due Soon</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />Overdue</span>
+              <div className="mt-4 h-[180px] border border-black/45 bg-[#d5d5d5] flex items-center justify-center">
+                <div className="w-[180px] h-[80px] border border-black/60 bg-white/10" />
+              </div>
+
+              <div className="mt-5 space-y-3 text-[12px] font-medium text-black">
+                <div className="flex items-center gap-2">
+                  <span className="w-[72px] font-bold">Name:</span>
+                  <span className="flex-1 border-b border-black pb-1 text-sm font-semibold">{student.name}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-[72px] font-bold">Course:</span>
+                  <span className="flex-1 border-b border-black pb-1 text-sm">{student.course}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-[72px] font-bold">Year:</span>
+                  <span className="w-[44px] border-b border-black pb-1 text-center text-sm">1st</span>
+                  <span className="font-bold">A.Y.</span>
+                  <span className="flex-1 border-b border-black pb-1 text-sm">2025-2026</span>
+                </div>
+              </div>
+
+              <div className="mt-5 border-t border-black/50 pt-2">
+                <div className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_0.7fr] text-[8px] font-bold uppercase tracking-[0.18em] text-black border-b border-black/40 pb-2">
+                  <div>Date Borrowed</div>
+                  <div>Title of the Book</div>
+                  <div>Author</div>
+                  <div>Date Returned</div>
+                  <div className="text-right">QR</div>
+                </div>
+
+                <div className="space-y-0 pt-2">
+                  {(allBorrowedEntries.length ? allBorrowedEntries : [{ book: '', author: '', borrowDate: '', returnDate: '', status: 'active' }]).map((entry, idx) => (
+                    <div key={`${entry.book}-${entry.borrowDate}-${idx}`} className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_0.7fr] text-[10px] text-black border-b border-black/20 pb-2 min-h-[24px]">
+                      <div className="pr-2 truncate">{entry.borrowDate || ' '}</div>
+                      <div className="pr-2 truncate">{entry.book || ' '}</div>
+                      <div className="pr-2 truncate">{entry.author || ' '}</div>
+                      <div className="truncate">{entry.returnDate || ' '}</div>
+                      <div className="text-right">{idx === 0 ? '■' : ''}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="border-t border-gray-400 pt-1 text-xs text-gray-400 w-28 text-center">Librarian's Signature</div>
+
+            <div className="border-l border-black/40 bg-[#d5d5d5] px-1 py-3">
+              <div className="flex h-full items-center justify-center">
+                <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }} className="text-[8px] font-bold uppercase tracking-[0.2em] text-black">
+                  Library Borrower's Card
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Actions */}
-        <div className="mt-4 flex gap-3">
-          <button className="flex-1 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
-            Print Card
-          </button>
-          <button className="flex-1 py-2.5 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
-            Download PDF
-          </button>
         </div>
       </div>
     </div>
   )
 }
 
-function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void }) {
-  const fines = 0
-  const overdueCount = borrowedBooks.filter((b) => b.status === 'overdue').length
-  const dueSoonCount = borrowedBooks.filter((b) => b.status === 'due-soon').length
-  const currentlyBorrowed = borrowedBooks.length
+function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: StudentView) => void; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+  const [rows, setRows] = useState<Array<{ id: string; title: string; author: string; borrowDate: string; dueDate: string; status: string }>>([])
+  const [announcements, setAnnouncements] = useState<LibraryAnnouncement[]>([])
 
-  const announcements: Array<{ title: string; date: string; text: string }> = []
+  useEffect(() => {
+    let active = true
 
-  const nextDue = null
+    async function syncAnnouncements() {
+      const next = await loadAnnouncements()
+      if (active) setAnnouncements(next)
+    }
+
+    void syncAnnouncements()
+
+    const handleAnnouncementUpdated = async () => {
+      const next = await loadAnnouncements()
+      if (active) setAnnouncements(next)
+    }
+
+    window.addEventListener('lms-announcements-updated', handleAnnouncementUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('lms-announcements-updated', handleAnnouncementUpdated)
+    }
+  }, [])
+
+  useEffect(() => {
+    const studentKey = String(userProfile?.studentId ?? userProfile?.studentCode ?? userProfile?.email ?? '').trim()
+
+    async function loadRows() {
+      if (!studentKey) {
+        setRows([])
+        return
+      }
+
+      try {
+        const nextRows = await fetchStudentBorrowingRecords(studentKey)
+        setRows(nextRows.map((row: any) => {
+          const dueDate = row.dueDate || row.due_date || ''
+          const status = String(row.status ?? '').trim() || inferLoanStatus(dueDate)
+          return {
+            id: String(row.id ?? `${row.title}-${row.borrowDate}`),
+            title: row.title ?? 'Unknown book',
+            author: row.author ?? 'Unknown author',
+            borrowDate: row.borrowDate ?? row.borrow_date ?? 'N/A',
+            dueDate,
+            status: String(status).toLowerCase(),
+          }
+        }))
+      } catch {
+        setRows([])
+      }
+    }
+
+    void loadRows()
+    const handleUpdated = () => { void loadRows() }
+    window.addEventListener('lms-borrow-updated', handleUpdated)
+    return () => window.removeEventListener('lms-borrow-updated', handleUpdated)
+  }, [userProfile?.studentId, userProfile?.studentCode, userProfile?.email])
+
+  const overdueCount = rows.filter((row) => row.status === 'overdue').length
+  const dueSoonCount = rows.filter((row) => row.status === 'due-soon').length
+  const currentlyBorrowed = rows.length
+  const nextDue = [...rows].filter((row) => row.dueDate).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0] ?? null
+
+  const fines = rows.reduce((sum, row) => {
+    if (row.status !== 'overdue' || !row.dueDate) return sum
+    const due = new Date(`${row.dueDate}T00:00:00`)
+    const diffDays = Math.max(0, Math.ceil((Date.now() - due.getTime()) / (1000 * 60 * 60 * 24)))
+    return sum + diffDays * 5
+  }, 0)
 
   return (
     <div>
@@ -897,18 +1006,22 @@ function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void
               <h3 className="text-base font-semibold text-green-900">Active Loans</h3>
               <button onClick={() => onNavigate('borrowed')} className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
             </div>
-            <Table headers={["Book Title", "Due Date", "Status", "Action"]}>
-              {borrowedBooks.map((b) => (
-                <Tr key={b.id}>
-                  <Td className="font-medium text-gray-900">{b.title}</Td>
-                  <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>{b.dueDate}</Td>
-                  <Td><StatusBadge status={b.status} /></Td>
-                  <Td>
-                    <button onClick={() => onNavigate('borrower-card')} className="px-3 py-1.5 border border-green-200 text-green-700 text-xs font-medium rounded-lg hover:bg-green-50 transition-colors">View Card</button>
-                  </Td>
-                </Tr>
-              ))}
-            </Table>
+            {rows.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-green-200 bg-green-50 p-5 text-sm text-gray-500">No active loans yet.</div>
+            ) : (
+              <Table headers={["Book Title", "Due Date", "Status", "Action"]}>
+                {rows.map((b) => (
+                  <Tr key={b.id}>
+                    <Td className="font-medium text-gray-900">{b.title}</Td>
+                    <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>{b.dueDate || 'N/A'}</Td>
+                    <Td><StatusBadge status={b.status} /></Td>
+                    <Td>
+                      <button onClick={() => onNavigate('borrower-card')} className="px-3 py-1.5 border border-green-200 text-green-700 text-xs font-medium rounded-lg hover:bg-green-50 transition-colors">View Card</button>
+                    </Td>
+                  </Tr>
+                ))}
+              </Table>
+            )}
           </div>
 
           <div className="mt-4 bg-white rounded-xl border border-green-100 p-5 shadow-sm">
@@ -930,7 +1043,9 @@ function StudentDashboard({ onNavigate }: { onNavigate: (v: StudentView) => void
         <aside className="space-y-4">
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Next Due Dates</div>
-            <div className="mt-2 text-sm text-gray-500">No upcoming due dates.</div>
+            <div className="mt-2 text-sm text-gray-500">
+              {nextDue ? `${nextDue.title} · ${nextDue.dueDate}` : 'No upcoming due dates.'}
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
@@ -1580,62 +1695,61 @@ function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId
   return (
     <div>
       <PageHeader title="Library Card" subtitle="Your digital library identification card." />
-      <div className="max-w-sm">
-        <div className="bg-white rounded-2xl border-2 border-green-200 overflow-hidden shadow-sm">
-          <div className="bg-green-700 px-6 py-4">
-            <div className="flex items-center gap-2 text-white">
-              <Icons.Library />
+      <div className="max-w-4xl">
+        <div className="bg-white border border-gray-300 shadow-md p-5 print:shadow-none print:border-black" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+          <div className="flex items-start justify-between border-b border-gray-300 pb-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-14 h-14 rounded-full border border-gray-400 bg-white flex items-center justify-center text-green-700 text-xl font-bold">S</div>
               <div>
-                <div className="font-bold text-sm leading-tight">sjbcnl</div>
-                <div className="text-green-200 text-xs">LIBRARY sjbcnl</div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-gray-700">Saint John Bosco College</div>
+                <div className="text-[10px] text-gray-500">College Department</div>
+              </div>
+            </div>
+            <div className="text-[9px] text-gray-500 italic text-right">Date Borrowed</div>
+          </div>
+
+          <div className="text-center pt-2 pb-4">
+            <div className="text-4xl font-bold tracking-wide text-gray-800">LIBRARY CARD</div>
+          </div>
+
+          <div className="grid grid-cols-[1.2fr_2.5fr] gap-4 items-center mt-6 mb-8">
+            <div className="border border-gray-400 bg-gray-50 h-36 flex items-center justify-center text-gray-300">
+              <span className="text-5xl">◌</span>
+            </div>
+
+            <div className="space-y-4 text-[14px] md:text-[16px] leading-relaxed">
+              <div className="flex items-center gap-3">
+                <span className="min-w-[110px] font-bold text-gray-700">Name:</span>
+                <span className="flex-1 border-b border-gray-500 pb-1 text-gray-800 italic">{student.name}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="min-w-[110px] font-bold text-gray-700">Course/Year:</span>
+                <span className="flex-1 border-b border-gray-500 pb-1 text-gray-800 italic">{student.course}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="min-w-[110px] font-bold text-gray-700">Semester:</span>
+                <span className="w-12 border-b border-gray-500 pb-1 text-gray-800 italic text-center">1st</span>
+                <span className="ml-2 font-bold text-gray-700">A.Y.</span>
+                <span className="flex-1 border-b border-gray-500 pb-1 text-gray-800 italic">2025-2026</span>
               </div>
             </div>
           </div>
 
-          <div className="p-6 flex gap-5">
-            <div className="flex-shrink-0">
-              <div className="w-20 h-24 bg-green-100 rounded-lg flex flex-col items-center justify-center text-green-400 border border-green-200">
-                <Icons.User />
-                <span className="text-xs mt-1 text-green-300">Photo</span>
-              </div>
+          <div className="mt-6 flex items-end justify-between gap-4">
+            <div className="w-1/2">
+              <div className="text-[18px] font-bold text-gray-700">Student No:</div>
+              <div className="mt-2 border-b border-gray-500 h-8" />
             </div>
-            <div className="flex-1 flex flex-col gap-1.5 text-sm">
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Student Name</div>
-                <div className="font-bold text-green-900">{student.name}</div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Student ID</div>
-                <div className="font-mono font-semibold text-gray-700">{student.id}</div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Course</div>
-                <div className="text-gray-700">{student.course}</div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400 uppercase tracking-wide font-medium">Card No.</div>
-                <div className="font-mono font-bold text-green-700">{student.cardNo}</div>
-              </div>
+
+            <div className="w-1/2 text-center">
+              <div className="h-16 flex items-center justify-center text-4xl text-gray-700 italic tracking-widest">/</div>
+              <div className="border-t border-gray-400 pt-2 text-[14px] font-medium text-gray-600">Signature</div>
             </div>
           </div>
 
-          <div className="border-t border-green-100 px-6 py-4 flex items-center justify-between bg-green-50">
-            <div className="text-green-600">
-              <Icons.QrCode />
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <div className="flex gap-0.5">
-                {Array.from({ length: 28 }).map((_, i) => (
-                  <div key={i} style={{ width: i % 3 === 0 ? 3 : 1.5, height: 32, background: '#15803d', opacity: (i % 5 === 0 ? 0.4 : 1) }} />
-                ))}
-              </div>
-              <span className="font-mono text-xs text-green-700 tracking-widest">{student.cardNo}</span>
-            </div>
-          </div>
-
-          <div className="px-6 py-3 flex items-center justify-between border-t border-green-100">
-            <span className="text-xs text-gray-500">Valid AY 2025–2026</span>
-            <StatusBadge status="active" />
+          <div className="mt-8 flex items-center justify-between border-t border-gray-300 pt-4 text-[11px] text-gray-500">
+            <span>Valid AY 2025–2026</span>
+            <span className="font-semibold uppercase tracking-widest text-green-700">Library</span>
           </div>
         </div>
 
@@ -3090,11 +3204,14 @@ function AdminSettings() {
     fine_per_day: '5.00',
     admin_email: 'admin@library.local',
   })
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', text: '' })
+  const [announcementList, setAnnouncementList] = useState<LibraryAnnouncement[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
+    setAnnouncementList(readPersistedState<LibraryAnnouncement[]>(ANNOUNCEMENTS_KEY, []))
     fetchSettings()
       .then((settings) => {
         setForm({
@@ -3127,33 +3244,113 @@ function AdminSettings() {
     }
   }
 
+  async function handleAddAnnouncement() {
+    const title = announcementForm.title.trim()
+    const text = announcementForm.text.trim()
+    if (!title || !text) return
+
+    const next = [
+      {
+        id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `announcement-${Date.now()}`,
+        title,
+        date: new Date().toISOString().slice(0, 10),
+        text,
+      },
+      ...announcementList,
+    ]
+
+    setAnnouncementList(next)
+    await saveAnnouncements(next)
+    window.dispatchEvent(new Event('lms-announcements-updated'))
+    setAnnouncementForm({ title: '', text: '' })
+    setMessage('Library announcement added.')
+  }
+
+  async function handleDeleteAnnouncement(id: string) {
+    const next = announcementList.filter((item) => item.id !== id)
+    setAnnouncementList(next)
+    await saveAnnouncements(next)
+    window.dispatchEvent(new Event('lms-announcements-updated'))
+  }
+
   return (
     <div>
       <PageHeader title="Settings" subtitle="Configure library system settings." />
-      <div className="max-w-lg bg-white rounded-xl border border-green-100 shadow-sm p-6">
-        <div className="flex flex-col gap-5">
-          {[
-            { label: 'Library Name', key: 'library_name' },
-            { label: 'Borrow Period (days)', key: 'borrow_period_days' },
-            { label: 'Max Books Per Student', key: 'max_books_per_student' },
-            { label: 'Fine Per Day (₱)', key: 'fine_per_day' },
-            { label: 'Admin Email', key: 'admin_email' },
-          ].map(({ label, key }) => (
-            <div key={label}>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
+      <div className="max-w-3xl space-y-6">
+        <div className="bg-white rounded-xl border border-green-100 shadow-sm p-6">
+          <div className="flex flex-col gap-5">
+            {[
+              { label: 'Library Name', key: 'library_name' },
+              { label: 'Borrow Period (days)', key: 'borrow_period_days' },
+              { label: 'Max Books Per Student', key: 'max_books_per_student' },
+              { label: 'Fine Per Day (₱)', key: 'fine_per_day' },
+              { label: 'Admin Email', key: 'admin_email' },
+            ].map(({ label, key }) => (
+              <div key={label}>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
+                <input
+                  type="text"
+                  value={(form as any)[key]}
+                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  disabled={loading}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition disabled:opacity-60"
+                />
+              </div>
+            ))}
+            <button onClick={handleSaveSettings} disabled={saving || loading} className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
+              {saving ? 'Saving...' : 'Save Settings'}
+            </button>
+            {message && <div className="text-sm text-green-700">{message}</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-green-100 shadow-sm p-6">
+          <h3 className="text-base font-semibold text-green-900 mb-4">Library Announcements</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Title</label>
               <input
                 type="text"
-                value={(form as any)[key]}
-                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                disabled={loading}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition disabled:opacity-60"
+                value={announcementForm.title}
+                onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+                placeholder="New library notice"
               />
             </div>
-          ))}
-          <button onClick={handleSaveSettings} disabled={saving || loading} className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
-          {message && <div className="text-sm text-green-700">{message}</div>}
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Message</label>
+              <textarea
+                value={announcementForm.text}
+                onChange={(e) => setAnnouncementForm({ ...announcementForm, text: e.target.value })}
+                className="w-full min-h-[100px] px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
+                placeholder="Write the announcement here..."
+              />
+            </div>
+
+            <button onClick={handleAddAnnouncement} className="py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
+              Add Announcement
+            </button>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {announcementList.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-green-200 bg-green-50 p-3 text-sm text-gray-500">No announcements yet.</div>
+            ) : (
+              announcementList.map((item) => (
+                <div key={item.id} className="rounded-lg border border-green-100 bg-green-50/40 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-green-900">{item.title}</div>
+                      <div className="text-xs text-gray-500 mt-1">{item.date}</div>
+                    </div>
+                    <button onClick={() => handleDeleteAnnouncement(item.id)} className="text-xs text-red-600 hover:text-red-700 font-medium">Delete</button>
+                  </div>
+                  <div className="mt-2 text-sm text-gray-700">{item.text}</div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -3176,7 +3373,7 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
 
   const renderView = () => {
     switch (view) {
-      case 'dashboard': return <StudentDashboard onNavigate={setView} />
+      case 'dashboard': return <StudentDashboard onNavigate={setView} userProfile={userProfile} />
       case 'search': return <SearchBooks studentId={studentId} userProfile={userProfile} />
       case 'borrowed': return <MyBorrowedBooks userProfile={userProfile} />
       case 'history': return <BorrowingHistory userProfile={userProfile} />
