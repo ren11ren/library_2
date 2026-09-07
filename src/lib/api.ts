@@ -137,9 +137,9 @@ async function passwordMatchesStoredValue(storedValue: unknown, inputPassword: s
 }
 
 export async function requestReturn(recordId: string, requestedReturnDate?: string, remark?: string) {
-    const returnDate = String(requestedReturnDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10)
+    // Do NOT set `return_date` yet — admin must confirm the return.
+    // Persist only the return request state and optional condition/remark.
     const payload: Record<string, any> = {
-        return_date: returnDate,
         status: 'return_requested',
     }
 
@@ -190,18 +190,19 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
 
         if (updateError) throw new Error(updateError.message)
 
-        if (updatedRecord?.book_id) {
+            if (updatedRecord?.book_id) {
             const { data: bookRow, error: bookLookupError } = await supabase
                 .from('books')
-                .select('id, available_copies')
+                .select('id, available_copies, available')
                 .eq('id', updatedRecord.book_id)
                 .maybeSingle()
 
             if (!bookLookupError && bookRow) {
-                const currentAvailable = Number(bookRow.available_copies ?? 0)
+                const currentAvailable = Number(bookRow.available_copies ?? bookRow.available ?? 0)
+                const next = Math.max(currentAvailable + 1, 0)
                 await supabase
                     .from('books')
-                    .update({ available_copies: Math.max(currentAvailable + 1, 0) })
+                    .update({ available_copies: next, available: next })
                     .eq('id', bookRow.id)
             }
         }
@@ -397,7 +398,9 @@ export async function returnBook(recordId: string) {
             if (updatedRecord?.book_id) {
                 const { data: bookRow } = await supabase.from('books').select('*').eq('id', updatedRecord.book_id).maybeSingle()
                 if (bookRow) {
-                    await supabase.from('books').update({ available: Number(bookRow.available ?? 0) + 1 }).eq('id', bookRow.id)
+                    const current = Number(bookRow.available_copies ?? bookRow.available ?? 0)
+                    const next = current + 1
+                    await supabase.from('books').update({ available_copies: next, available: next }).eq('id', bookRow.id)
                 }
             }
             return updatedRecord

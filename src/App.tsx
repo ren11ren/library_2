@@ -315,6 +315,18 @@ async function saveAnnouncements(announcements: LibraryAnnouncement[]) {
   }
 }
 
+async function deleteAnnouncement(id: string) {
+  try {
+    const { error } = await supabase.from('library_announcements').delete().eq('id', id)
+    if (!error) return true
+    console.warn('Delete from Supabase failed, falling back to local state.', error)
+  } catch (error) {
+    console.warn('Delete from Supabase failed, falling back to local state.', error)
+  }
+
+  return false
+}
+
 const borrowedBooks: any[] = []
 const searchResults: any[] = []
 const adminBooks: any[] = []
@@ -1075,25 +1087,17 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [borrowModal, setBorrowModal] = useState<any | null>(null)
-  const [testStudentId, setTestStudentId] = useState(studentId || userProfile?.studentCode || userProfile?.studentId || 'STU-2021-001')
-  const [testBookId, setTestBookId] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const resolvedBorrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId]
+  const resolvedBorrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId]
     .map((value) => String(value ?? '').trim())
     .find((value) => value && !value.includes('@')) ?? ''
 
   const studentName = userProfile?.name ?? 'Student'
   const libraryCardNo = userProfile?.card ?? `CARD-${resolvedBorrowStudentId.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12) || 'STUDENT'}`
-  const studentIdentifier = resolvedBorrowStudentId || (testStudentId && !testStudentId.includes('@') ? testStudentId : '')
-
-  useEffect(() => {
-    const nextValue = studentId || userProfile?.studentCode || userProfile?.studentId || testStudentId
-    const chosen = nextValue && !nextValue.includes('@') ? nextValue : 'STU-2021-001'
-    setTestStudentId((current) => current && current !== 'STU-2021-001' ? current : chosen)
-  }, [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId])
+  const studentIdentifier = resolvedBorrowStudentId
 
   const { data: booksRt } = useSupabaseRealtime('books')
   const { data: borrowingRt } = useSupabaseRealtime('borrowing_records')
@@ -1119,37 +1123,10 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
     return matchQ && matchC
   })
 
-  useEffect(() => {
-    if (!testBookId && localBooks[0]) setTestBookId(localBooks[0].id)
-  }, [localBooks, testBookId])
-
-  const handleOpenBorrowTest = () => {
-    const selectedBook = localBooks.find((book) => book.id === testBookId) ?? localBooks[0]
-    if (!selectedBook) {
-      setError('No book is available for a test borrow.')
-      return
-    }
-
-    const reference = String(selectedBook.book_code ?? selectedBook.isbn ?? selectedBook.id ?? '').trim()
-
-    setBorrowModal({
-      id: selectedBook.id,
-      reference,
-      title: selectedBook.title,
-      author: selectedBook.author,
-      isbn: selectedBook.isbn,
-      category: selectedBook.category,
-      available: selectedBook.available,
-      copies: selectedBook.copies,
-    })
-    setError(null)
-    setConfirmed(false)
-  }
-
   const handleConfirmBorrow = async () => {
     if (!borrowModal) return
 
-    const borrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId, testStudentId]
+    const borrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId]
       .map((value) => String(value ?? '').trim())
       .find((value) => value && !value.includes('@')) ?? ''
 
@@ -1308,51 +1285,6 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
         </table>
       </div>
 
-      <div className="mt-6 rounded-xl border border-green-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold text-green-900">Borrow Test Area</h3>
-          <span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-green-700">Debug</span>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">Student ID</label>
-            <input
-              value={testStudentId}
-              onChange={(e) => setTestStudentId(e.target.value)}
-              placeholder="STU-2021-001"
-              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100"
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">Book ID</label>
-            <input
-              value={testBookId}
-              onChange={(e) => setTestBookId(e.target.value)}
-              placeholder="Choose a book from the list"
-              className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100"
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleOpenBorrowTest}
-            className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-green-700"
-          >
-            Open Borrow Test
-          </button>
-          <button
-            onClick={() => {
-              setTestStudentId(studentId || userProfile?.studentCode || userProfile?.studentId || 'STU-2021-001')
-              setTestBookId(localBooks[0]?.id ?? '')
-            }}
-            className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
     </div>
   )
 }
@@ -1536,7 +1468,8 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
     try {
       setReturningId(recordId)
       await requestReturn(recordId, returnRequestDate)
-      setRows((current) => current.filter((row) => String(row.id) !== String(recordId)))
+      // Keep the loan visible for the student, mark it as 'return_requested'
+      setRows((current) => (current || []).map((row) => (String(row.id) === String(recordId) ? { ...row, status: 'return_requested' } : row)))
       setReturnRequestId(null)
       setReturnRequestDate(new Date().toISOString().slice(0, 10))
       window.dispatchEvent(new Event('lms-borrow-updated'))
@@ -1630,7 +1563,7 @@ function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; stud
       const entries = await fetchStudentBorrowingLog(studentKey)
       setHistoryRows(entries.map((entry) => ({
         title: entry.book,
-        author: 'Unknown author',
+        author: entry.author ?? 'Unknown author',
         borrowDate: entry.borrowDate,
         returnDate: entry.returnDate,
         status: entry.status,
@@ -1667,99 +1600,109 @@ function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; stud
 
 function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const student = {
-    name: userProfile?.name ?? 'Student',
+    name: userProfile?.name ?? 'Juan Dela Cruz',
     id: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
-    course: userProfile?.course ?? 'Unassigned',
+    course: userProfile?.course ?? 'BSCS 3',
     cardNo: userProfile?.card ?? 'N/A',
   }
 
   function handleDownloadCard() {
-    const content = [
-      'LIBRARY sjbcnl',
-      `Student Name: ${student.name}`,
-      `Student ID: ${student.id}`,
-      `Course: ${student.course}`,
-      `Card No.: ${student.cardNo}`,
-      'Valid: AY 2025–2026',
-    ].join('\n')
-
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const el = document.getElementById('library-card')
+    if (!el) return
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Library Card</title></head><body>${el.outerHTML}</body></html>`
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'library-card.txt'
-    link.click()
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `library-card-${student.id || 'card'}.html`
+    a.click()
     URL.revokeObjectURL(url)
   }
+
+  const currentYear = new Date().getFullYear()
+  const ay = `${currentYear}-${currentYear + 1}`
 
   return (
     <div>
       <PageHeader title="Library Card" subtitle="Your digital library identification card." />
-      <div className="max-w-4xl">
-        <div className="bg-white border border-gray-300 shadow-md p-5 print:shadow-none print:border-black" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
-          <div className="flex items-start justify-between border-b border-gray-300 pb-3 mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-full border border-gray-400 bg-white flex items-center justify-center text-green-700 text-xl font-bold">S</div>
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-widest text-gray-700">Saint John Bosco College</div>
-                <div className="text-[10px] text-gray-500">College Department</div>
-              </div>
-            </div>
-            <div className="text-[9px] text-gray-500 italic text-right">Date Borrowed</div>
+      <div className="max-w-4xl mx-auto">
+        <div id="library-card" className="library-card bg-white">
+          <style>{`
+            .library-card { width: 1000px; height: 550px; margin: auto; background: white; border: 2px solid #777; border-radius: 8px; overflow: hidden; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+            .header { height: 100px; position: relative; padding: 18px 25px; }
+            .school-logo { width: 80px; height: 80px; border-radius: 50%; border: 2px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 11px; text-align: center; color: #777; position: absolute; left: 25px; top: 10px; }
+            .school-name { margin-left: 105px; font-size: 20px; font-weight: bold; color: #333; margin-top: 3px; }
+            .school-department { margin-left: 105px; font-size: 12px; color: #555; margin-top: 3px; }
+            .school-info { margin-left: 105px; font-size: 9px; color: #555; line-height: 1.3; margin-top: 7px; }
+            .qr { position: absolute; right: 25px; top: 15px; width: 65px; height: 65px; border: 2px solid #222; display: flex; justify-content: center; align-items: center; font-size: 10px; }
+            .green-strip { position: absolute; top: 87px; left: 20px; right: 20px; height: 50px; background: #dff0c9; border-radius: 2px; z-index: 0; }
+            .main { position: relative; margin-top: 35px; height: 300px; padding: 20px 25px; }
+            .title { text-align: center; font-size: 34px; font-weight: bold; color: #444; margin-bottom: 30px; }
+            .photo-box { position: absolute; left: 25px; top: 75px; width: 250px; height: 190px; border: 1px solid #777; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 14px; }
+            .information { position: absolute; left: 330px; right: 30px; top: 75px; }
+            .field { display: flex; align-items: center; margin-bottom: 25px; font-size: 23px; }
+            .label { width: 150px; color: #444; }
+            .line { flex: 1; border-bottom: 2px solid #555; min-height: 30px; padding-left: 10px; font-style: italic; }
+            .bottom { position: absolute; bottom: 0; left: 0; width: 100%; height: 100px; background: #f5f5f5; border-top: 1px solid #aaa; display: flex; align-items: center; padding: 15px 25px; }
+            .student-number { display: flex; align-items: center; width: 48%; font-size: 20px; font-weight: bold; }
+            .student-line { flex: 1; margin-left: 10px; border-bottom: 2px solid #555; height: 28px; }
+            .signature { width: 48%; text-align: center; position: relative; height: 70px; }
+            .signature-line { position: absolute; bottom: 20px; left: 20px; right: 20px; border-bottom: 2px solid #555; }
+            .signature-label { position: absolute; bottom: -5px; left: 0; right: 0; font-size: 16px; }
+            .borrow-section { position: absolute; right: -2px; top: 0; width: 280px; height: 100%; background: #55b9e8; border-left: 2px solid #777; padding: 20px; }
+            .borrow-title { font-size: 22px; color: #333; margin-bottom: 25px; }
+            .borrow-row { height: 55px; border-bottom: 1px solid rgba(0,0,0,0.3); }
+            @media print { body { background: white; padding: 0; } .library-card { box-shadow: none; } }
+            @media (max-width: 1050px) { .library-card { transform-origin: top left; transform: scale(0.8); } }
+          `}</style>
+
+          <div className="header">
+            <div className="school-logo">SCHOOL<br/>LOGO</div>
+            <div className="school-name">SAINT JOHN BOSCO COLLEGE OF NORTHERN LUZON, INC.</div>
+            <div className="school-department">College Department</div>
+            <div className="school-info">Library Department<br/>School Library</div>
+            <div className="qr">QR CODE</div>
           </div>
 
-          <div className="text-center pt-2 pb-4">
-            <div className="text-4xl font-bold tracking-wide text-gray-800">LIBRARY CARD</div>
-          </div>
+          <div className="green-strip"></div>
 
-          <div className="grid grid-cols-[1.2fr_2.5fr] gap-4 items-center mt-6 mb-8">
-            <div className="border border-gray-400 bg-gray-50 h-36 flex items-center justify-center text-gray-300">
-              <span className="text-5xl">◌</span>
-            </div>
-
-            <div className="space-y-4 text-[14px] md:text-[16px] leading-relaxed">
-              <div className="flex items-center gap-3">
-                <span className="min-w-[110px] font-bold text-gray-700">Name:</span>
-                <span className="flex-1 border-b border-gray-500 pb-1 text-gray-800 italic">{student.name}</span>
+          <div className="main">
+            <div className="title">LIBRARY CARD</div>
+            <div className="photo-box">PHOTO</div>
+            <div className="information">
+              <div className="field">
+                <div className="label">Name:</div>
+                <div className="line">{student.name}</div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="min-w-[110px] font-bold text-gray-700">Course/Year:</span>
-                <span className="flex-1 border-b border-gray-500 pb-1 text-gray-800 italic">{student.course}</span>
+              <div className="field">
+                <div className="label">Course/Year:</div>
+                <div className="line">{student.course}</div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="min-w-[110px] font-bold text-gray-700">Semester:</span>
-                <span className="w-12 border-b border-gray-500 pb-1 text-gray-800 italic text-center">1st</span>
-                <span className="ml-2 font-bold text-gray-700">A.Y.</span>
-                <span className="flex-1 border-b border-gray-500 pb-1 text-gray-800 italic">2025-2026</span>
+              <div className="field">
+                <div className="label">Semester:</div>
+                <div className="line">1st</div>
+              </div>
+              <div className="field">
+                <div className="label">A.Y.</div>
+                <div className="line">{ay}</div>
               </div>
             </div>
           </div>
 
-          <div className="mt-6 flex items-end justify-between gap-4">
-            <div className="w-1/2">
-              <div className="text-[18px] font-bold text-gray-700">Student No:</div>
-              <div className="mt-2 border-b border-gray-500 h-8" />
+          <div className="bottom">
+            <div className="student-number">Student No:
+              <div className="student-line">{student.id}</div>
             </div>
-
-            <div className="w-1/2 text-center">
-              <div className="h-16 flex items-center justify-center text-4xl text-gray-700 italic tracking-widest">/</div>
-              <div className="border-t border-gray-400 pt-2 text-[14px] font-medium text-gray-600">Signature</div>
+            <div className="signature">
+              <div className="signature-line"></div>
+              <div className="signature-label">Signature</div>
             </div>
-          </div>
-
-          <div className="mt-8 flex items-center justify-between border-t border-gray-300 pt-4 text-[11px] text-gray-500">
-            <span>Valid AY 2025–2026</span>
-            <span className="font-semibold uppercase tracking-widest text-green-700">Library</span>
           </div>
         </div>
 
         <div className="mt-4 flex gap-3">
-          <button onClick={handleDownloadCard} className="flex-1 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
-            Download Card
-          </button>
-          <button onClick={() => window.print()} className="flex-1 py-2.5 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
-            Print
-          </button>
+          <button onClick={handleDownloadCard} className="flex-1 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">Download Card</button>
+          <button onClick={() => window.print()} className="flex-1 py-2.5 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">Print</button>
         </div>
       </div>
     </div>
@@ -2660,9 +2603,11 @@ function AdminUsers() {
 
 function AdminBorrowingRecords() {
   const [query, setQuery] = useState('')
-  const { data: borrowRows } = useSupabaseRealtime('borrowing_records')
-  const { data: bookRows } = useSupabaseRealtime('books')
+  const { data: borrowRows, loading: borrowLoading } = useSupabaseRealtime('borrowing_records')
+  const { data: bookRows, loading: bookLoading } = useSupabaseRealtime('books')
   const [loginRows, setLoginRows] = useState<any[]>([])
+  const [page, setPage] = useState(0)
+  const pageSize = 10
 
   useEffect(() => {
     async function loadLoginRows() {
@@ -2714,6 +2659,19 @@ function AdminBorrowingRecords() {
     return [row.student, row.book, row.txn].join(' ').toLowerCase().includes(q)
   })
 
+  // sort recent first (by borrow date if available, otherwise by id)
+  const sorted = filtered.slice().sort((a: any, b: any) => {
+    const aTime = Number.isNaN(Date.parse(String(a.borrow))) ? 0 : Date.parse(String(a.borrow))
+    const bTime = Number.isNaN(Date.parse(String(b.borrow))) ? 0 : Date.parse(String(b.borrow))
+    if (aTime === bTime) return String(b.id ?? '').localeCompare(String(a.id ?? ''))
+    return bTime - aTime
+  })
+
+  const total = sorted.length
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  useEffect(() => { setPage(0) }, [query])
+  const pageRows = sorted.slice(page * pageSize, (page + 1) * pageSize)
+
   return (
     <div>
       <PageHeader title="Borrowing Records" subtitle="All active and historical borrowing transactions." />
@@ -2728,24 +2686,36 @@ function AdminBorrowingRecords() {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {borrowLoading ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">Loading borrowing records…</div>
+      ) : total === 0 ? (
         <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowing records found.</div>
       ) : (
-        <Table headers={['Txn ID', 'Student', 'Card No.', 'Book', 'Borrow Date', 'Due Date', 'Status']}>
-          {filtered.map((r) => (
-            <Tr key={r.id ?? r.txn}>
-              <Td className="font-mono text-xs text-gray-400">{r.txn}</Td>
-              <Td className="font-medium text-gray-900">{r.student}</Td>
-              <Td className="font-mono text-xs text-green-700">{r.card}</Td>
-              <Td>{r.book}</Td>
-              <Td>{r.borrow}</Td>
-              <Td className={r.status === 'overdue' ? 'text-red-600 font-medium' : r.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
-                {r.due}
-              </Td>
-              <Td><StatusBadge status={r.status} /></Td>
-            </Tr>
-          ))}
-        </Table>
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm text-gray-600">Showing {Math.min(pageSize, total - page * pageSize)} of {total} records</div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page <= 0} className="px-3 py-1 rounded-md border border-green-200 text-sm text-green-700 disabled:opacity-50">Prev</button>
+              <div className="text-sm text-gray-600">Page {page + 1} / {totalPages}</div>
+              <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="px-3 py-1 rounded-md border border-green-200 text-sm text-green-700 disabled:opacity-50">Next</button>
+            </div>
+          </div>
+          <Table headers={['Txn ID', 'Student', 'Card No.', 'Book', 'Borrow Date', 'Due Date', 'Status']}>
+            {pageRows.map((r) => (
+              <Tr key={r.id ?? r.txn}>
+                <Td className="font-mono text-xs text-gray-400">{r.txn}</Td>
+                <Td className="font-medium text-gray-900">{r.student}</Td>
+                <Td className="font-mono text-xs text-green-700">{r.card}</Td>
+                <Td>{r.book}</Td>
+                <Td>{r.borrow}</Td>
+                <Td className={r.status === 'overdue' ? 'text-red-600 font-medium' : r.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>
+                  {r.due}
+                </Td>
+                <Td><StatusBadge status={r.status} /></Td>
+              </Tr>
+            ))}
+          </Table>
+        </>
       )}
     </div>
   )
@@ -2791,8 +2761,33 @@ function AdminReturns() {
         due: record.dueDate ?? record.due_date ?? 'N/A',
         returnDate: pendingDate,
         remark: pendingRemark,
+        status: String(record?.status ?? '').toLowerCase(),
       }
     })
+
+    const otherActiveReturns = activeReturns.filter((r: any) => r.status !== 'return_requested')
+
+    const returnRequests = (borrowRows ?? [])
+      .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested')
+      .map((record: any) => {
+        const recordStudentId = String(record?.studentId ?? record?.student_id ?? '').trim()
+        const student = (loginRows ?? []).find((item: any) => {
+          const itemId = String(item?.id ?? '').trim()
+          const itemStudentId = String(item?.studentId ?? item?.student_id ?? '').trim()
+          const itemStudentCode = String(item?.studentCode ?? item?.student_code ?? '').trim()
+          return itemId === recordStudentId || itemStudentId === recordStudentId || itemStudentCode === recordStudentId
+        })
+        const book = (bookRows ?? []).find((item: any) => String(item?.id ?? '').trim() === String(record?.bookId ?? record?.book_id ?? '').trim())
+        return {
+          id: record.id,
+          student: student?.fullName ?? student?.full_name ?? student?.studentCode ?? 'Unknown student',
+          card: student?.studentCode ?? student?.student_code ?? 'N/A',
+          book: book?.title ?? 'Unknown book',
+          due: record.dueDate ?? record.due_date ?? 'N/A',
+          returnDate: record.return_date ?? record.returnDate ?? new Date().toISOString().slice(0, 10),
+          remark: record.condition ?? record.condition ?? '',
+        }
+      })
 
   async function handleConfirmReturn(recordId: string, returnDate?: string, remark?: string) {
     try {
@@ -3267,9 +3262,14 @@ function AdminSettings() {
   }
 
   async function handleDeleteAnnouncement(id: string) {
+    const deletedFromDb = await deleteAnnouncement(id)
     const next = announcementList.filter((item) => item.id !== id)
     setAnnouncementList(next)
     await saveAnnouncements(next)
+    if (deletedFromDb) {
+      window.dispatchEvent(new Event('lms-announcements-updated'))
+      return
+    }
     window.dispatchEvent(new Event('lms-announcements-updated'))
   }
 
@@ -3452,6 +3452,86 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const recent = dashboard?.records ?? borrowingRecords
   const overdue = dashboard?.overdue ?? overdueRecords
 
+  const [recentRecords, setRecentRecords] = useState<Array<any>>(recent?.slice(0, 10) ?? [])
+  const [page, setPage] = useState<number>(0)
+  const pageSize = 10
+  const [totalCount, setTotalCount] = useState<number>(0)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadRecent() {
+      try {
+        // If dashboard provided recent records use them (with pagination), otherwise fetch from Supabase
+        if (dashboard?.records && Array.isArray(dashboard.records) && dashboard.records.length >= 0) {
+          const total = dashboard.records.length
+          const start = page * pageSize
+          const end = start + pageSize
+          if (active) {
+            setRecentRecords(dashboard.records.slice(start, end))
+            setTotalCount(total)
+          }
+          return
+        }
+
+        const start = page * pageSize
+        const end = start + pageSize - 1
+        const { data: borrowRows, error: borrowErr, count } = await supabase
+          .from('borrowing_records')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+          .range(start, end)
+
+        if (borrowErr) throw borrowErr
+        if (!borrowRows || borrowRows.length === 0) {
+          if (active) setRecentRecords([])
+          if (active) setTotalCount(count ?? 0)
+          return
+        }
+
+        const studentIds = [...new Set(borrowRows.map((r: any) => String(r.student_id ?? '').trim()).filter(Boolean))]
+        const bookIds = [...new Set(borrowRows.map((r: any) => String(r.book_id ?? '').trim()).filter(Boolean))]
+
+        const { data: studentRows } = studentIds.length > 0 ? await supabase.from('students').select('id, name').in('id', studentIds) : { data: [] }
+        const { data: bookRows } = bookIds.length > 0 ? await supabase.from('books').select('id, title').in('id', bookIds) : { data: [] }
+        const { data: loginRowsByStudentId } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('id, student_id, student_code, full_name').in('student_id', studentIds) : { data: [] }
+        const { data: loginRowsById } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('id, student_id, student_code, full_name').in('id', studentIds) : { data: [] }
+
+        const loginRows = [...(loginRowsByStudentId ?? []), ...(loginRowsById ?? [])]
+
+        const studentMap = new Map((studentRows ?? []).map((s: any) => [String(s.id ?? '').trim(), s]))
+        const loginMap = new Map()
+        ;(loginRows || []).forEach((l: any) => {
+          if (l?.student_id) loginMap.set(String(l.student_id).trim(), l)
+          if (l?.id) loginMap.set(String(l.id).trim(), l)
+          if (l?.student_code) loginMap.set(String(l.student_code).trim(), l)
+        })
+        const bookMap = new Map((bookRows ?? []).map((b: any) => [String(b.id ?? '').trim(), b]))
+
+        const mapped = (borrowRows || []).map((r: any) => ({
+          id: r.id,
+          txn: r.txn_code ?? r.id,
+          student: (studentMap.get(String(r.student_id ?? '').trim())?.name) ?? (loginMap.get(String(r.student_id ?? '').trim())?.full_name) ?? String(r.student_id ?? '').slice(0, 8),
+          book: (bookMap.get(String(r.book_id ?? '').trim())?.title) ?? String(r.book_id ?? '').slice(0, 8),
+          due: r.due_date ?? r.dueDate ?? 'N/A',
+          status: (r.status ?? 'active').toLowerCase(),
+        }))
+
+        if (active) {
+          setRecentRecords(mapped)
+          setTotalCount(count ?? 0)
+        }
+      } catch (err) {
+        console.warn('Unable to load recent borrowing records', err)
+        if (active) setRecentRecords([])
+        if (active) setTotalCount(0)
+      }
+    }
+
+    void loadRecent()
+    return () => { active = false }
+  }, [dashboard, page])
+
   const totalBooks = stats?.totalBooks ?? 0
   const availableBooks = stats?.availableBooks ?? 0
   const borrowedBooks = stats?.borrowedBooks ?? 0
@@ -3551,11 +3631,16 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           <div className="mt-6 bg-white rounded-xl border border-green-100 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-green-900">Recent Borrowing Records</h3>
-              <button className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page <= 0} className="px-3 py-1 rounded-md border border-green-200 text-sm text-green-700 disabled:opacity-50">Prev</button>
+                <div className="text-sm text-gray-600">Page {page + 1} / {Math.max(1, Math.ceil((totalCount || 0) / pageSize))}</div>
+                <button onClick={() => setPage((p) => Math.min(Math.max(0, Math.ceil((totalCount || 0) / pageSize) - 1), p + 1))} disabled={(page + 1) * pageSize >= (totalCount || 0)} className="px-3 py-1 rounded-md border border-green-200 text-sm text-green-700 disabled:opacity-50">Next</button>
+                <button onClick={() => {/* view all placeholder - can navigate to records page */}} className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
+              </div>
             </div>
             <Table headers={["Student", "Book", "Due Date", "Status"]}>
-              {recent.slice(0, 6).map((r: any, idx: number) => (
-                <Tr key={r.txn ?? idx}>
+              {recentRecords.slice(0, 6).map((r: any, idx: number) => (
+                <Tr key={r.txn ?? r.id ?? idx}>
                   <Td className="font-medium">{r.student}</Td>
                   <Td className="text-gray-500 text-xs">{r.book}</Td>
                   <Td>{r.due}</Td>
