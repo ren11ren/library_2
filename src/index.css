@@ -258,3 +258,77 @@ h3 {
   background: var(--muted);
   border-radius: 9999px;
 }
+
+/* Mobile-specific responsive rules (target 375–430px widths) */
+/* hidden by default; shown on small screens */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 430px) {
+
+  /* Stack multi-column grids to a single column */
+  .stack-on-mobile {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Touch target and spacing helpers */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+  }
+
+  /* Hide desktop-only elements and show mobile-only */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  .show-on-mobile {
+    display: block !important;
+  }
+
+  /* Bottom navigation: persistent, thumb-friendly */
+  .mobile-bottom-nav {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    display: flex;
+    gap: 8px;
+    justify-content: space-around;
+    align-items: center;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--neutral-border);
+    padding: 6px 10px;
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.06);
+    z-index: 60;
+  }
+
+  .mobile-bottom-nav button {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    color: var(--muted-text);
+  }
+
+  .mobile-bottom-nav button.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  /* Reduce global paddings on small screens */
+  .app-root .p-4 {
+    padding: 12px !important;
+  }
+
+  .app-root .p-6 {
+    padding: 12px !important;
+  }
+}

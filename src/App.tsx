@@ -212,6 +212,27 @@ const Icons = {
   ),
 }
 
+// ─── Mobile Bottom Navigation Component ──────────────────────────────────────
+function MobileNav({ items, active, onSelect }: { items: { id: string; label: string; icon: ReactNode }[]; active: string; onSelect: (id: string) => void }) {
+  return (
+    <nav className="mobile-bottom-nav hide-on-desktop show-on-mobile" role="navigation" aria-label="Primary mobile navigation">
+      {items.map((it) => (
+        <button
+          key={it.id}
+          onClick={() => onSelect(it.id)}
+          aria-label={it.label}
+          className={`touch-target ${active === it.id ? 'active' : ''}`}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 20, height: 20 }}>{it.icon}</div>
+            <div style={{ fontSize: 10, color: 'inherit' }}>{it.label}</div>
+          </div>
+        </button>
+      ))}
+    </nav>
+  )
+}
+
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const libraryClassificationCategories = [
   'All',
