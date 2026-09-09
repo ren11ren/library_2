@@ -668,7 +668,7 @@ function Sidebar({
   title: string
 }) {
   return (
-    <aside className="w-full bg-green-900 flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
+    <aside className="w-full sidebar-minimal flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
       <div className="px-4 py-4 border-b border-green-800 lg:px-5 lg:py-6">
         <div className="flex items-center justify-center gap-2.5 text-white lg:justify-start">
           <Icons.Library />
@@ -3384,7 +3384,7 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-green-50 lg:flex-row">
+    <div className="flex min-h-screen w-full flex-col app-root lg:flex-row">
       <Sidebar
         items={navItems}
         active={view}
@@ -3432,7 +3432,7 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-green-50 lg:flex-row">
+    <div className="flex min-h-screen w-full flex-col app-root lg:flex-row">
       <Sidebar
         items={navItems}
         active={view}
