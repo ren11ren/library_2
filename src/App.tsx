@@ -1657,10 +1657,10 @@ function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId
           `}</style>
 
           <div className="header">
-            <div className="school-logo">SCHOOL<br/>LOGO</div>
+            <div className="school-logo">SCHOOL<br />LOGO</div>
             <div className="school-name">SAINT JOHN BOSCO COLLEGE OF NORTHERN LUZON, INC.</div>
             <div className="school-department">College Department</div>
-            <div className="school-info">Library Department<br/>School Library</div>
+            <div className="school-info">Library Department<br />School Library</div>
             <div className="qr">QR CODE</div>
           </div>
 
@@ -2765,29 +2765,29 @@ function AdminReturns() {
       }
     })
 
-    const otherActiveReturns = activeReturns.filter((r: any) => r.status !== 'return_requested')
+  const otherActiveReturns = activeReturns.filter((r: any) => r.status !== 'return_requested')
 
-    const returnRequests = (borrowRows ?? [])
-      .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested')
-      .map((record: any) => {
-        const recordStudentId = String(record?.studentId ?? record?.student_id ?? '').trim()
-        const student = (loginRows ?? []).find((item: any) => {
-          const itemId = String(item?.id ?? '').trim()
-          const itemStudentId = String(item?.studentId ?? item?.student_id ?? '').trim()
-          const itemStudentCode = String(item?.studentCode ?? item?.student_code ?? '').trim()
-          return itemId === recordStudentId || itemStudentId === recordStudentId || itemStudentCode === recordStudentId
-        })
-        const book = (bookRows ?? []).find((item: any) => String(item?.id ?? '').trim() === String(record?.bookId ?? record?.book_id ?? '').trim())
-        return {
-          id: record.id,
-          student: student?.fullName ?? student?.full_name ?? student?.studentCode ?? 'Unknown student',
-          card: student?.studentCode ?? student?.student_code ?? 'N/A',
-          book: book?.title ?? 'Unknown book',
-          due: record.dueDate ?? record.due_date ?? 'N/A',
-          returnDate: record.return_date ?? record.returnDate ?? new Date().toISOString().slice(0, 10),
-          remark: record.condition ?? record.condition ?? '',
-        }
+  const returnRequests = (borrowRows ?? [])
+    .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested')
+    .map((record: any) => {
+      const recordStudentId = String(record?.studentId ?? record?.student_id ?? '').trim()
+      const student = (loginRows ?? []).find((item: any) => {
+        const itemId = String(item?.id ?? '').trim()
+        const itemStudentId = String(item?.studentId ?? item?.student_id ?? '').trim()
+        const itemStudentCode = String(item?.studentCode ?? item?.student_code ?? '').trim()
+        return itemId === recordStudentId || itemStudentId === recordStudentId || itemStudentCode === recordStudentId
       })
+      const book = (bookRows ?? []).find((item: any) => String(item?.id ?? '').trim() === String(record?.bookId ?? record?.book_id ?? '').trim())
+      return {
+        id: record.id,
+        student: student?.fullName ?? student?.full_name ?? student?.studentCode ?? 'Unknown student',
+        card: student?.studentCode ?? student?.student_code ?? 'N/A',
+        book: book?.title ?? 'Unknown book',
+        due: record.dueDate ?? record.due_date ?? 'N/A',
+        returnDate: record.return_date ?? record.returnDate ?? new Date().toISOString().slice(0, 10),
+        remark: record.condition ?? record.condition ?? '',
+      }
+    })
 
   async function handleConfirmReturn(recordId: string, returnDate?: string, remark?: string) {
     try {
@@ -3501,11 +3501,11 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
 
         const studentMap = new Map((studentRows ?? []).map((s: any) => [String(s.id ?? '').trim(), s]))
         const loginMap = new Map()
-        ;(loginRows || []).forEach((l: any) => {
-          if (l?.student_id) loginMap.set(String(l.student_id).trim(), l)
-          if (l?.id) loginMap.set(String(l.id).trim(), l)
-          if (l?.student_code) loginMap.set(String(l.student_code).trim(), l)
-        })
+          ; (loginRows || []).forEach((l: any) => {
+            if (l?.student_id) loginMap.set(String(l.student_id).trim(), l)
+            if (l?.id) loginMap.set(String(l.id).trim(), l)
+            if (l?.student_code) loginMap.set(String(l.student_code).trim(), l)
+          })
         const bookMap = new Map((bookRows ?? []).map((b: any) => [String(b.id ?? '').trim(), b]))
 
         const mapped = (borrowRows || []).map((r: any) => ({
@@ -3635,7 +3635,7 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
                 <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page <= 0} className="px-3 py-1 rounded-md border border-green-200 text-sm text-green-700 disabled:opacity-50">Prev</button>
                 <div className="text-sm text-gray-600">Page {page + 1} / {Math.max(1, Math.ceil((totalCount || 0) / pageSize))}</div>
                 <button onClick={() => setPage((p) => Math.min(Math.max(0, Math.ceil((totalCount || 0) / pageSize) - 1), p + 1))} disabled={(page + 1) * pageSize >= (totalCount || 0)} className="px-3 py-1 rounded-md border border-green-200 text-sm text-green-700 disabled:opacity-50">Next</button>
-                <button onClick={() => {/* view all placeholder - can navigate to records page */}} className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
+                <button onClick={() => {/* view all placeholder - can navigate to records page */ }} className="text-sm text-green-600 hover:text-green-800 font-medium flex items-center gap-1">View all <Icons.ChevronRight /></button>
               </div>
             </div>
             <Table headers={["Student", "Book", "Due Date", "Status"]}>
