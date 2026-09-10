@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
+import MobileDashboard from './mobile/StudentMobileDashboard'
 import {
   login,
   fetchStudentBorrowingRecords,
@@ -215,7 +216,7 @@ const Icons = {
 // ─── Mobile Bottom Navigation Component ──────────────────────────────────────
 function MobileNav({ items, active, onSelect }: { items: { id: string; label: string; icon: ReactNode }[]; active: string; onSelect: (id: string) => void }) {
   return (
-    <nav className="mobile-bottom-nav hide-on-desktop" role="navigation" aria-label="Primary mobile navigation">
+    <nav className="mobile-bottom-nav hide-on-desktop show-on-mobile" role="navigation" aria-label="Primary mobile navigation">
       {items.map((it) => (
         <button
           key={it.id}
@@ -689,7 +690,7 @@ function Sidebar({
   title: string
 }) {
   return (
-    <aside className="w-full sidebar-minimal hide-on-mobile flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
+    <aside className="w-full sidebar-minimal flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
       <div className="px-4 py-4 border-b border-green-800 lg:px-5 lg:py-6">
         <div className="flex items-center justify-center gap-2.5 text-white lg:justify-start">
           <Icons.Library />
@@ -3416,7 +3417,6 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
       <main className="flex-1 overflow-auto">
         <div className="w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
       </main>
-      <MobileNav items={navItems} active={view} onSelect={(id) => setView(id as StudentView)} />
     </div>
   )
 }
@@ -3465,7 +3465,6 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
       <main className="flex-1 overflow-auto">
         <div className="w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
       </main>
-      <MobileNav items={navItems} active={view} onSelect={(id) => setView(id as AdminView)} />
     </div>
   )
 }
@@ -3736,11 +3735,30 @@ type AuthState = {
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
+  const [isMobile, setIsMobile] = useState<boolean>(false)
 
   // The live project uses the custom student_login_accounts flow.
   // Do not trigger the legacy students/library_cards sync because those tables are not present.
   useEffect(() => {
     startAuthSync()
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 430px)')
+    const update = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile((e as any).matches ?? mq.matches)
+    try {
+      // modern
+      mq.addEventListener?.('change', update)
+    } catch {
+      // fallback
+      // @ts-ignore
+      mq.addListener?.(update)
+    }
+    setIsMobile(mq.matches)
+    return () => {
+      try { mq.removeEventListener?.('change', update) } catch { try { mq.removeListener?.(update) } catch {} }
+    }
   }, [])
 
   async function handleLogin(role: Role, email: string, password: string) {
@@ -3779,6 +3797,10 @@ export default function App() {
   }, [auth])
 
   if (!auth) return <LoginPage onLogin={handleLogin} />
-  if (auth.role === 'student') return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode }} />
+  if (auth.role === 'student') {
+    if (isMobile) return <MobileDashboard />
+    return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode }} />
+  }
+
   return <AdminLayout onLogout={() => setAuth(null)} dashboard={dashboard} />
 }
