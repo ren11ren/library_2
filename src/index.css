@@ -52,8 +52,10 @@ body {
 
 /* 8px grid helpers */
 .g-1 {
-  --accent: #00A86B; /* primary Emerald Green per spec */
-  --mint: #E6F4EA; /* light mint */
+  --accent: #00A86B;
+  /* primary Emerald Green per spec */
+  --mint: #E6F4EA;
+  /* light mint */
 }
 
 .g-2 {

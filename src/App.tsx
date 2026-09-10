@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import MobileDashboard from './mobile/StudentMobileDashboard'
+import useIsMobile from './hooks/useIsMobile'
 import {
   login,
   fetchStudentBorrowingRecords,
@@ -3382,6 +3383,11 @@ function AdminSettings() {
 // ─── Student Layout ────────────────────────────────────────────────────────────
 function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => void; studentId?: string; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [view, setView] = useState<StudentView>('dashboard')
+  const isMobile = useIsMobile(430)
+
+  if (isMobile) {
+    return <MobileDashboard />
+  }
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <Icons.Dashboard /> },
@@ -3757,7 +3763,7 @@ export default function App() {
     }
     setIsMobile(mq.matches)
     return () => {
-      try { mq.removeEventListener?.('change', update) } catch { try { mq.removeListener?.(update) } catch {} }
+      try { mq.removeEventListener?.('change', update) } catch { try { mq.removeListener?.(update) } catch { } }
     }
   }, [])
 
