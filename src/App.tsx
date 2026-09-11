@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import MobileDashboard from './mobile/StudentMobileDashboard'
+import TopHeader from './components/TopHeader'
 import useIsMobile from './hooks/useIsMobile'
 import {
   login,
@@ -3412,17 +3413,20 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col app-root lg:flex-row">
-      <Sidebar
-        items={navItems}
-        active={view}
-        onSelect={(id) => setView(id as StudentView)}
-        onLogout={onLogout}
-        title="Student Portal"
-      />
-      <main className="flex-1 overflow-auto">
-        <div className="w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
-      </main>
+    <div className="min-h-screen w-full app-root">
+      <TopHeader />
+      <div className="flex">
+        <Sidebar
+          items={navItems}
+          active={view}
+          onSelect={(id) => setView(id as StudentView)}
+          onLogout={onLogout}
+          title="Student Portal"
+        />
+        <main className="flex-1 overflow-auto">
+          <div className="max-w-4xl mx-auto w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
+        </main>
+      </div>
     </div>
   )
 }
@@ -3460,17 +3464,20 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col app-root lg:flex-row">
-      <Sidebar
-        items={navItems}
-        active={view}
-        onSelect={(id) => setView(id as AdminView)}
-        onLogout={onLogout}
-        title="Librarian Portal"
-      />
-      <main className="flex-1 overflow-auto">
-        <div className="w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
-      </main>
+    <div className="min-h-screen w-full app-root">
+      <TopHeader />
+      <div className="flex">
+        <Sidebar
+          items={navItems}
+          active={view}
+          onSelect={(id) => setView(id as AdminView)}
+          onLogout={onLogout}
+          title="Librarian Portal"
+        />
+        <main className="flex-1 overflow-auto">
+          <div className="max-w-6xl mx-auto w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
+        </main>
+      </div>
     </div>
   )
 }
