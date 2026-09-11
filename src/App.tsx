@@ -3387,7 +3387,24 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
   const isMobile = useIsMobile(430)
 
   if (isMobile) {
-    return <MobileDashboard />
+    switch (view) {
+      case 'dashboard':
+        return <MobileDashboard currentView={view} onNavigate={(id) => setView(id as StudentView)} onLogout={onLogout} userProfile={userProfile} />
+      case 'search':
+        return <SearchBooks studentId={studentId} userProfile={userProfile} />
+      case 'borrowed':
+        return <MyBorrowedBooks userProfile={userProfile} />
+      case 'history':
+        return <BorrowingHistory userProfile={userProfile} />
+      case 'borrower-card':
+        return <StudentBorrowerCard userProfile={userProfile} />
+      case 'card':
+        return <LibraryCard userProfile={userProfile} />
+      case 'profile':
+        return <Profile userProfile={userProfile} />
+      default:
+        return <MobileDashboard currentView={view} onNavigate={(id) => setView(id as StudentView)} onLogout={onLogout} userProfile={userProfile} />
+    }
   }
 
   const navItems = [
@@ -3778,7 +3795,7 @@ export default function App() {
     const res = await login(email, password, role)
     const student = res.student ?? null
     const card = res.card ?? null
-    const effectiveStudentCode = res.user?.student_code ?? student?.student_code ?? res.user?.student_id ?? email
+    const effectiveStudentCode = student?.student_code ?? res.user?.student_id ?? email
     const effectiveStudentId = res.user?.student_id ?? effectiveStudentCode
     const derivedCard = card?.card_no ?? (effectiveStudentCode ? `CARD-${String(effectiveStudentCode).replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12) || 'STUDENT'}` : 'N/A')
 
@@ -3787,9 +3804,9 @@ export default function App() {
       userId: res.user?.id,
       studentId: effectiveStudentId,
       email: res.user?.email ?? email,
-      name: student?.name ?? res.user?.full_name ?? res.user?.email?.split('@')[0] ?? 'Student',
+      name: student?.name ?? (res.user?.email ? res.user.email.split('@')[0] : 'Student'),
       studentCode: effectiveStudentCode,
-      course: student?.course ?? res.user?.course ?? 'Unassigned',
+      course: student?.course ?? 'Unassigned',
       card: derivedCard,
     })
   }
@@ -3811,7 +3828,6 @@ export default function App() {
 
   if (!auth) return <LoginPage onLogin={handleLogin} />
   if (auth.role === 'student') {
-    if (isMobile) return <MobileDashboard />
     return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode }} />
   }
 
