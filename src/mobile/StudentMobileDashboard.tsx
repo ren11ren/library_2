@@ -41,7 +41,7 @@ export default function StudentMobileDashboard({ onNavigate, onLogout, userProfi
                 <TopHeader />
 
                 <div className="flex gap-3 mt-3 justify-center">
-                      <MobileInlineSidebar items={items} active={active} onSelect={(id) => handleNavigate(id)} />
+                    <MobileInlineSidebar items={items} active={active} onSelect={(id) => handleNavigate(id)} />
 
                     <main className="w-full max-w-md p-4">
                         {/* Debug indicator */}

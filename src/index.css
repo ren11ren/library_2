@@ -12,14 +12,20 @@
   --muted-text: #6B7280;
   --accent: #00A86B;
   --mint: #E6F4EA;
-  --focus: rgba(0,168,107,0.12);
+  --focus: rgba(0, 168, 107, 0.12);
   --r-sm: 6px;
   --r-md: 12px;
 }
 
-* { box-sizing: border-box }
+* {
+  box-sizing: border-box
+}
 
-html, body, #root { height: 100% }
+html,
+body,
+#root {
+  height: 100%
+}
 
 body {
   margin: 0;
@@ -31,70 +37,271 @@ body {
 }
 
 /* Grid & spacing helpers */
-.g-2 { gap: calc(var(--space) * 2) }
-.p-1 { padding: calc(var(--space) * 1) }
-.p-2 { padding: calc(var(--space) * 2) }
-.p-3 { padding: calc(var(--space) * 3) }
+.g-2 {
+  gap: calc(var(--space) * 2)
+}
+
+.p-1 {
+  padding: calc(var(--space) * 1)
+}
+
+.p-2 {
+  padding: calc(var(--space) * 2)
+}
+
+.p-3 {
+  padding: calc(var(--space) * 3)
+}
 
 /* Card styles */
-.card { background: var(--surface); border-radius: 12px; border: 1px solid var(--neutral-border); box-shadow: 0 6px 16px rgba(2,6,23,0.04) }
-.card-hero { padding: calc(var(--space) * 3); background: linear-gradient(90deg, rgba(230,244,234,0.6), rgba(255,255,255,0.4)) }
+.card {
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--neutral-border);
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.04)
+}
+
+.card-hero {
+  padding: calc(var(--space) * 3);
+  background: linear-gradient(90deg, rgba(230, 244, 234, 0.6), rgba(255, 255, 255, 0.4))
+}
 
 /* Buttons */
-.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:8px 12px; border-radius:8px; font-weight:600; border:1px solid transparent; cursor:pointer }
-.btn-primary { background:var(--accent); color:white; box-shadow:0 4px 10px rgba(0,168,107,0.08) }
-.btn-outline { background:transparent; color:var(--text); border-color:var(--neutral-border) }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 4px 10px rgba(0, 168, 107, 0.08)
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--neutral-border)
+}
 
 /* Inputs */
-input, textarea, select { background:var(--surface); border:1px solid var(--neutral-border); padding:8px 10px; border-radius:8px; color:var(--text) }
-input:focus, textarea:focus, select:focus { outline:none; box-shadow:0 0 0 4px var(--focus); border-color:var(--accent) }
+input,
+textarea,
+select {
+  background: var(--surface);
+  border: 1px solid var(--neutral-border);
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text)
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--focus);
+  border-color: var(--accent)
+}
 
 /* Sidebar */
-.sidebar-minimal { width:220px; padding:18px 12px; background:transparent }
-.sidebar-minimal .brand { color:var(--text); font-weight:700 }
-.sidebar-minimal nav button { display:flex; align-items:center; gap:10px; background:transparent; border:none; color:var(--muted-text); padding:10px 12px; border-radius:12px; width:100%; text-align:left }
-.sidebar-minimal nav button svg { opacity:0.95 }
-.sidebar-minimal nav button.active { background:var(--accent); color:white; box-shadow:0 4px 14px rgba(0,168,107,0.08) }
-.sidebar-minimal nav button:hover { background:rgba(0,168,107,0.06); color:var(--text) }
+.sidebar-minimal {
+  width: 220px;
+  padding: 18px 12px;
+  background: transparent
+}
 
-svg { opacity:0.9 }
+.sidebar-minimal .brand {
+  color: var(--text);
+  font-weight: 700
+}
+
+.sidebar-minimal nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  color: var(--muted-text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  width: 100%;
+  text-align: left
+}
+
+.sidebar-minimal nav button svg {
+  opacity: 0.95
+}
+
+.sidebar-minimal nav button.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 4px 14px rgba(0, 168, 107, 0.08)
+}
+
+.sidebar-minimal nav button:hover {
+  background: rgba(0, 168, 107, 0.06);
+  color: var(--text)
+}
+
+svg {
+  opacity: 0.9
+}
 
 /* Tables */
-table { border-collapse:collapse }
-thead th { border-bottom:1px solid var(--neutral-border); color:var(--muted-text); font-weight:600 }
-tbody td { border-bottom:1px solid var(--muted) }
+table {
+  border-collapse: collapse
+}
+
+thead th {
+  border-bottom: 1px solid var(--neutral-border);
+  color: var(--muted-text);
+  font-weight: 600
+}
+
+tbody td {
+  border-bottom: 1px solid var(--muted)
+}
 
 /* Utility overrides */
-.bg-green-50 { background-color: var(--surface) !important }
-.border-green-100 { border-color: var(--neutral-border) !important }
-.text-green-700 { color: var(--text) !important }
-.bg-green-600, .bg-green-700 { background-color: var(--accent) !important; color: white !important }
-.text-green-600 { color: var(--accent) !important }
-.hover\:bg-green-50:hover { background-color: var(--surface) !important }
-.rounded-xl { border-radius: 12px !important }
-.rounded-2xl { border-radius: 14px !important }
+.bg-green-50 {
+  background-color: var(--surface) !important
+}
 
-.focus-ring:focus { box-shadow: 0 0 0 4px var(--focus) }
-.caption { font-size:12px; color:var(--muted-text) }
+.border-green-100 {
+  border-color: var(--neutral-border) !important
+}
 
-h1,h2,h3 { color:var(--text); font-weight:600; margin:0 }
-h1 { font-size:20px }
-h2 { font-size:16px }
-h3 { font-size:14px }
+.text-green-700 {
+  color: var(--text) !important
+}
+
+.bg-green-600,
+.bg-green-700 {
+  background-color: var(--accent) !important;
+  color: white !important
+}
+
+.text-green-600 {
+  color: var(--accent) !important
+}
+
+.hover\:bg-green-50:hover {
+  background-color: var(--surface) !important
+}
+
+.rounded-xl {
+  border-radius: 12px !important
+}
+
+.rounded-2xl {
+  border-radius: 14px !important
+}
+
+.focus-ring:focus {
+  box-shadow: 0 0 0 4px var(--focus)
+}
+
+.caption {
+  font-size: 12px;
+  color: var(--muted-text)
+}
+
+h1,
+h2,
+h3 {
+  color: var(--text);
+  font-weight: 600;
+  margin: 0
+}
+
+h1 {
+  font-size: 20px
+}
+
+h2 {
+  font-size: 16px
+}
+
+h3 {
+  font-size: 14px
+}
 
 /* Main container helper */
-.main-container { max-width:920px; margin:0 auto }
+.main-container {
+  max-width: 920px;
+  margin: 0 auto
+}
 
 /* Mobile rules */
-.mobile-bottom-nav { display:none }
+.mobile-bottom-nav {
+  display: none
+}
+
 @media (max-width: 430px) {
-  .stack-on-mobile { grid-template-columns: 1fr !important }
-  .touch-target { min-width:44px; min-height:44px; padding:10px }
-  .hide-on-mobile { display:none !important }
-  .show-on-mobile { display:block !important }
-  .mobile-bottom-nav { position:fixed; left:12px; right:12px; bottom:12px; display:flex; gap:8px; justify-content:space-around; align-items:center; background:var(--surface); border-radius:12px; border:1px solid var(--neutral-border); padding:6px 10px; box-shadow:0 10px 30px rgba(2,6,23,0.06); z-index:60 }
-  .mobile-bottom-nav button { min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; border-radius:8px; background:transparent; border:none; color:var(--muted-text) }
-  .mobile-bottom-nav button.active { background:var(--accent); color:#fff }
-  .app-root .p-4 { padding:12px !important }
-  .app-root .p-6 { padding:12px !important }
+  .stack-on-mobile {
+    grid-template-columns: 1fr !important
+  }
+
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px
+  }
+
+  .hide-on-mobile {
+    display: none !important
+  }
+
+  .show-on-mobile {
+    display: block !important
+  }
+
+  .mobile-bottom-nav {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    display: flex;
+    gap: 8px;
+    justify-content: space-around;
+    align-items: center;
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--neutral-border);
+    padding: 6px 10px;
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.06);
+    z-index: 60
+  }
+
+  .mobile-bottom-nav button {
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    color: var(--muted-text)
+  }
+
+  .mobile-bottom-nav button.active {
+    background: var(--accent);
+    color: #fff
+  }
+
+  .app-root .p-4 {
+    padding: 12px !important
+  }
+
+  .app-root .p-6 {
+    padding: 12px !important
+  }
 }
