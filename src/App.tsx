@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import MobileDashboard from './mobile/StudentMobileDashboard'
 import TopHeader from './components/TopHeader'
+import MobileSidebar from './components/MobileSidebar'
 import useIsMobile from './hooks/useIsMobile'
 import {
   login,
@@ -692,7 +693,7 @@ function Sidebar({
   title: string
 }) {
   return (
-    <aside className="w-full sidebar-minimal flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
+    <aside className="sidebar-minimal hidden lg:flex flex-col lg:w-64 lg:min-h-screen lg:shrink-0">
       <div className="px-4 py-4 border-b border-green-800 lg:px-5 lg:py-6">
         <div className="flex items-center justify-center gap-2.5 text-white lg:justify-start">
           <Icons.Library />
@@ -3384,9 +3385,25 @@ function AdminSettings() {
 // ─── Student Layout ────────────────────────────────────────────────────────────
 function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => void; studentId?: string; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [view, setView] = useState<StudentView>('dashboard')
-  const isMobile = useIsMobile(430)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const isMobile = useIsMobile(900)
 
-  if (isMobile) {
+  const handleStudentNav = (id: string) => {
+    setView(id as StudentView)
+    setMobileNavOpen(false)
+  }
+
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: <Icons.Dashboard /> },
+    { id: 'search', label: 'Search Books', icon: <Icons.Search /> },
+    { id: 'borrowed', label: 'My Borrowed Books', icon: <Icons.Book /> },
+    { id: 'history', label: 'Borrowing History', icon: <Icons.History /> },
+    { id: 'borrower-card', label: 'Borrower Card', icon: <Icons.FileText /> },
+    { id: 'card', label: 'Library Card', icon: <Icons.IdCard /> },
+    { id: 'profile', label: 'Profile', icon: <Icons.User /> },
+  ]
+
+  const renderMobileView = () => {
     switch (view) {
       case 'dashboard':
         return <MobileDashboard currentView={view} onNavigate={(id) => setView(id as StudentView)} onLogout={onLogout} userProfile={userProfile} />
@@ -3407,15 +3424,26 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
     }
   }
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: <Icons.Dashboard /> },
-    { id: 'search', label: 'Search Books', icon: <Icons.Search /> },
-    { id: 'borrowed', label: 'My Borrowed Books', icon: <Icons.Book /> },
-    { id: 'history', label: 'Borrowing History', icon: <Icons.History /> },
-    { id: 'borrower-card', label: 'Borrower Card', icon: <Icons.FileText /> },
-    { id: 'card', label: 'Library Card', icon: <Icons.IdCard /> },
-    { id: 'profile', label: 'Profile', icon: <Icons.User /> },
-  ]
+  if (isMobile) {
+    return (
+      <div className="min-h-screen w-full bg-[#F9FAFB]">
+        <TopHeader onMenuClick={() => setMobileNavOpen(true)} />
+        <main className="w-full pb-20 pt-2">
+          {renderMobileView()}
+        </main>
+
+        <MobileSidebar
+          open={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+          items={navItems}
+          active={view}
+          onSelect={handleStudentNav}
+          onLogout={onLogout}
+          title="Student Portal"
+        />
+      </div>
+    )
+  }
 
   const renderView = () => {
     switch (view) {
@@ -3429,21 +3457,41 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
     }
   }
 
+  const desktopNavItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: <Icons.Dashboard /> },
+    { id: 'search', label: 'Search Books', icon: <Icons.Search /> },
+    { id: 'borrowed', label: 'My Borrowed Books', icon: <Icons.Book /> },
+    { id: 'history', label: 'Borrowing History', icon: <Icons.History /> },
+    { id: 'borrower-card', label: 'Borrower Card', icon: <Icons.FileText /> },
+    { id: 'card', label: 'Library Card', icon: <Icons.IdCard /> },
+    { id: 'profile', label: 'Profile', icon: <Icons.User /> },
+  ]
+
   return (
     <div className="min-h-screen w-full app-root">
-      <TopHeader />
+      <TopHeader onMenuClick={() => setMobileNavOpen(true)} />
       <div className="flex">
         <Sidebar
-          items={navItems}
+          items={desktopNavItems}
           active={view}
-          onSelect={(id) => setView(id as StudentView)}
+          onSelect={handleStudentNav}
           onLogout={onLogout}
           title="Student Portal"
         />
         <main className="flex-1 overflow-auto">
-          <div className="max-w-4xl mx-auto w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
+          <div className="max-w-6xl mx-auto w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
         </main>
       </div>
+
+      <MobileSidebar
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        items={desktopNavItems}
+        active={view}
+        onSelect={handleStudentNav}
+        onLogout={onLogout}
+        title="Student Portal"
+      />
     </div>
   )
 }
@@ -3492,7 +3540,7 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
           title="Librarian Portal"
         />
         <main className="flex-1 overflow-auto">
-          <div className="max-w-6xl mx-auto w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
+          <div className="max-w-7xl mx-auto w-full p-4 sm:p-6 lg:p-8">{renderView()}</div>
         </main>
       </div>
     </div>
@@ -3765,30 +3813,11 @@ type AuthState = {
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
-  const [isMobile, setIsMobile] = useState<boolean>(false)
 
   // The live project uses the custom student_login_accounts flow.
   // Do not trigger the legacy students/library_cards sync because those tables are not present.
   useEffect(() => {
     startAuthSync()
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(max-width: 430px)')
-    const update = (e: MediaQueryListEvent | MediaQueryList) => setIsMobile((e as any).matches ?? mq.matches)
-    try {
-      // modern
-      mq.addEventListener?.('change', update)
-    } catch {
-      // fallback
-      // @ts-ignore
-      mq.addListener?.(update)
-    }
-    setIsMobile(mq.matches)
-    return () => {
-      try { mq.removeEventListener?.('change', update) } catch { try { mq.removeListener?.(update) } catch { } }
-    }
   }, [])
 
   async function handleLogin(role: Role, email: string, password: string) {

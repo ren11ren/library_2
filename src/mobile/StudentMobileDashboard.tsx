@@ -6,6 +6,7 @@ import AnnouncementsCard from '../components/AnnouncementsCard'
 import QuickActions from '../components/QuickActions'
 import FooterHours from '../components/FooterHours'
 import MobileInlineSidebar from '../components/MobileInlineSidebar'
+import MobileSidebar from '../components/MobileSidebar'
 import { LayoutDashboard, Search, Bookmark, RotateCcw, Users, Library, User } from 'lucide-react'
 
 export default function StudentMobileDashboard({ onNavigate, onLogout, userProfile, currentView }: { onNavigate?: (id: string) => void; onLogout?: () => void; userProfile?: any; currentView?: string } = {}) {
@@ -20,6 +21,7 @@ export default function StudentMobileDashboard({ onNavigate, onLogout, userProfi
     ]
 
     const [active, setActive] = React.useState(currentView ?? 'dashboard')
+    const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false)
 
     React.useEffect(() => {
         if (currentView && currentView !== active) setActive(currentView)
@@ -29,6 +31,7 @@ export default function StudentMobileDashboard({ onNavigate, onLogout, userProfi
         console.log('[MobileDashboard] navigate ->', id)
         try {
             setActive(id)
+            setMobileMenuOpen(false)
             onNavigate?.(id)
         } catch (err) {
             console.error('navigate handler error', err)
@@ -38,12 +41,10 @@ export default function StudentMobileDashboard({ onNavigate, onLogout, userProfi
     return (
         <div className="min-h-screen bg-[#F9FAFB] text-[#111827] flex justify-center">
             <div className="w-full max-w-4xl p-2">
-                <TopHeader />
+                <TopHeader onMenuClick={() => setMobileMenuOpen(true)} />
 
-                <div className="flex gap-3 mt-3 justify-center">
-                    <MobileInlineSidebar items={items} active={active} onSelect={(id) => handleNavigate(id)} />
-
-                    <main className="w-full max-w-md p-4">
+                <div className="mt-3 flex min-w-0 items-start justify-center sm:gap-3">
+                    <main className="w-full min-w-0 max-w-md p-3 sm:p-4">
                         {/* Debug indicator */}
                         <div className="fixed top-20 right-4 z-50 bg-white border rounded px-3 py-1 text-xs text-gray-600 shadow">view: {active}</div>
 
@@ -69,6 +70,19 @@ export default function StudentMobileDashboard({ onNavigate, onLogout, userProfi
                     </main>
                 </div>
             </div>
+
+            <MobileSidebar
+                open={mobileMenuOpen}
+                onClose={() => setMobileMenuOpen(false)}
+                items={items}
+                active={active}
+                onSelect={(id) => handleNavigate(id)}
+                onLogout={() => {
+                    setMobileMenuOpen(false)
+                    onLogout?.()
+                }}
+                title="Student Portal"
+            />
         </div>
     )
 }

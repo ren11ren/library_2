@@ -1,34 +1,26 @@
 import React from 'react'
-import { BookOpen, Search, Bell, ChevronDown } from 'lucide-react'
+import { BookOpen, Search, Bell, ChevronDown, Menu } from 'lucide-react'
 
-export default function TopHeader() {
+export default function TopHeader({ onMenuClick }: { onMenuClick?: () => void }) {
     return (
-        <header className="sticky top-0 z-40 w-full bg-white border-b border-[#E5E7EB] px-6 py-3">
-            <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <header className="sticky top-0 z-40 w-full bg-white border-b border-[#E5E7EB] px-3 py-3 sm:px-6">
+            <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
                 {/* Left: Branding */}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3">
+                    <button
+                        type="button"
+                        onClick={onMenuClick}
+                        className="mobile-menu-button flex h-12 w-12 items-center justify-center rounded-xl border border-[#E5E7EB] bg-white/95 text-gray-700 shadow-lg backdrop-blur-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00A86B] focus-visible:ring-offset-2 md:hidden"
+                        aria-label="Open navigation menu"
+                    >
+                        <Menu size={20} strokeWidth={2.2} />
+                    </button>
+
                     <div className="w-10 h-10 rounded-md bg-[#E6F4EA] flex items-center justify-center">
                         <BookOpen size={18} className="text-[#00A86B]" />
                     </div>
                     <div>
                         <div className="text-slate-800 font-bold text-base">Library Portal</div>
-                    </div>
-                </div>
-
-                {/* Center: Search */}
-                <div className="flex-1 px-6">
-                    <div className="max-w-md mx-auto">
-                        <div className="relative">
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                                <Search size={16} />
-                            </div>
-                            <input
-                                type="search"
-                                placeholder="Search books, authors..."
-                                className="w-full rounded-full bg-[#F3F6F9] px-12 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
-                                aria-label="Search books"
-                            />
-                        </div>
                     </div>
                 </div>
 

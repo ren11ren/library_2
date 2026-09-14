@@ -36,6 +36,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.mobile-menu-button {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0;
+  touch-action: manipulation;
+}
+
 /* Grid & spacing helpers */
 .g-2 {
   gap: calc(var(--space) * 2)
