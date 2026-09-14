@@ -4,7 +4,7 @@ import { Library } from 'lucide-react'
 
 export default function StatsGrid() {
     return (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2">
             <Card className="p-3">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-md bg-[#E6F4EA] flex items-center justify-center text-[#00A86B]"><Library size={16} /></div>

@@ -5,7 +5,7 @@ import { ChevronRight } from 'lucide-react'
 export default function ActiveLoansCard({ onViewCard }: { onViewCard?: () => void } = {}) {
     return (
         <Card className="p-3">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold">Active Loans</div>
                 <a className="text-xs text-[#00A86B] flex items-center gap-1">View all <ChevronRight size={14} /></a>
             </div>
