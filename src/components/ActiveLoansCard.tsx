@@ -2,7 +2,15 @@ import React from 'react'
 import Card from './Card'
 import { ChevronRight } from 'lucide-react'
 
-export default function ActiveLoansCard({ onViewCard }: { onViewCard?: () => void } = {}) {
+export default function ActiveLoansCard({
+    onViewCard,
+    rows = [],
+}: {
+    onViewCard?: () => void
+    rows?: Array<{ title: string; dueDate?: string; status?: string }>
+} = {}) {
+    const activeRow = rows[0] ?? { title: 'No active loans', dueDate: 'N/A', status: 'active' }
+
     return (
         <Card className="p-3">
             <div className="flex items-center justify-between mb-2">
@@ -18,10 +26,10 @@ export default function ActiveLoansCard({ onViewCard }: { onViewCard?: () => voi
 
             <div className="bg-white p-3 rounded-lg border border-[#F3F4F6]">
                 <div className="flex flex-col gap-2">
-                    <div className="text-sm font-medium">Structure and Interpretation</div>
-                    <div className="text-xs text-gray-500">2026-09-22</div>
+                    <div className="text-sm font-medium break-words">{activeRow.title}</div>
+                    <div className="text-xs text-gray-500">{activeRow.dueDate || 'N/A'}</div>
                     <div className="flex items-center gap-2 mt-2">
-                        <div className="text-xs px-2 py-1 rounded-full bg-[#E6F4EA] text-[#00A86B]">Active</div>
+                        <div className="text-xs px-2 py-1 rounded-full bg-[#E6F4EA] text-[#00A86B]">{activeRow.status === 'overdue' ? 'Overdue' : activeRow.status === 'due-soon' ? 'Due soon' : 'Active'}</div>
                         <button onClick={() => onViewCard?.()} className="ml-auto h-9 px-3 rounded-lg border border-[#E5E7EB] text-sm">View Card</button>
                     </div>
                 </div>

@@ -3427,7 +3427,14 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
   if (isMobile) {
     return (
       <div className="min-h-screen w-full bg-[#F9FAFB]">
-        <TopHeader onMenuClick={() => setMobileNavOpen(true)} />
+        <TopHeader
+          onMenuClick={() => setMobileNavOpen(true)}
+          userName={userProfile?.name ?? 'Student'}
+          onProfileClick={() => {
+            setView('profile')
+            setMobileNavOpen(false)
+          }}
+        />
         <main className="w-full pb-20 pt-2">
           {renderMobileView()}
         </main>
@@ -3469,7 +3476,14 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
 
   return (
     <div className="min-h-screen w-full app-root">
-      <TopHeader onMenuClick={() => setMobileNavOpen(true)} />
+      <TopHeader
+        onMenuClick={() => setMobileNavOpen(true)}
+        userName={userProfile?.name ?? 'Student'}
+        onProfileClick={() => {
+          setView('profile')
+          setMobileNavOpen(false)
+        }}
+      />
       <div className="flex">
         <Sidebar
           items={desktopNavItems}

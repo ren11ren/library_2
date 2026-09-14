@@ -1,7 +1,15 @@
 import React from 'react'
 import { BookOpen, Search, Bell, ChevronDown, Menu } from 'lucide-react'
 
-export default function TopHeader({ onMenuClick }: { onMenuClick?: () => void }) {
+export default function TopHeader({ onMenuClick, userName, onProfileClick }: { onMenuClick?: () => void; userName?: string; onProfileClick?: () => void }) {
+    const resolvedName = userName?.trim() || 'Student'
+    const initials = resolvedName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase() ?? '')
+        .join('') || 'S'
+
     return (
         <header className="sticky top-0 z-40 w-full bg-white border-b border-[#E5E7EB] px-3 py-3 sm:px-6">
             <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
@@ -20,7 +28,7 @@ export default function TopHeader({ onMenuClick }: { onMenuClick?: () => void })
                         <BookOpen size={18} className="text-[#00A86B]" />
                     </div>
                     <div>
-                        <div className="text-slate-800 font-bold text-base">Library Portal</div>
+                        <div className="text-slate-900 font-extrabold text-lg tracking-tight">Library Management</div>
                     </div>
                 </div>
 
@@ -31,9 +39,15 @@ export default function TopHeader({ onMenuClick }: { onMenuClick?: () => void })
                         <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#10B981] ring-1 ring-white" />
                     </button>
 
-                    <button className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1">
-                        <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-sm font-semibold text-slate-600">JR</div>
-                        <ChevronDown size={14} className="text-slate-500" />
+                    <button
+                        type="button"
+                        onClick={onProfileClick}
+                        className="flex items-center gap-2 bg-slate-100 rounded-full px-3 py-1 max-w-[180px] transition hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00A86B] focus-visible:ring-offset-2"
+                        aria-label="Open profile"
+                    >
+                        <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-xs font-semibold text-slate-600 shrink-0">{initials}</div>
+                        <span className="truncate text-sm font-medium text-slate-700">{resolvedName}</span>
+                        <ChevronDown size={14} className="text-slate-500 shrink-0" />
                     </button>
                 </div>
             </div>
