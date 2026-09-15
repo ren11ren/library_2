@@ -3888,27 +3888,27 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
         const loginRows = [...(loginRowsByStudentId ?? []), ...(loginRowsById ?? [])]
 
         const studentMap = new Map<string, any>()
-        ;(studentRows ?? []).forEach((s: any) => {
-          const id = String(s?.id ?? '').trim()
-          const code = String(s?.student_code ?? '').trim()
-          if (id) studentMap.set(id, s)
-          if (code) studentMap.set(code, s)
-        })
+          ; (studentRows ?? []).forEach((s: any) => {
+            const id = String(s?.id ?? '').trim()
+            const code = String(s?.student_code ?? '').trim()
+            if (id) studentMap.set(id, s)
+            if (code) studentMap.set(code, s)
+          })
 
         const loginMap = new Map<string, any>()
-        ;(loginRows || []).forEach((l: any) => {
-          const id = String(l?.id ?? '').trim()
-          const studentId = String(l?.student_id ?? '').trim()
-          const studentCode = String(l?.student_code ?? '').trim()
-          if (id) loginMap.set(id, l)
-          if (studentId) loginMap.set(studentId, l)
-          if (studentCode) loginMap.set(studentCode, l)
-        })
+          ; (loginRows || []).forEach((l: any) => {
+            const id = String(l?.id ?? '').trim()
+            const studentId = String(l?.student_id ?? '').trim()
+            const studentCode = String(l?.student_code ?? '').trim()
+            if (id) loginMap.set(id, l)
+            if (studentId) loginMap.set(studentId, l)
+            if (studentCode) loginMap.set(studentCode, l)
+          })
         const bookMap = new Map<string, any>()
-        ;(bookRows ?? []).forEach((b: any) => {
-          const id = String(b?.id ?? '').trim()
-          if (id) bookMap.set(id, b)
-        })
+          ; (bookRows ?? []).forEach((b: any) => {
+            const id = String(b?.id ?? '').trim()
+            if (id) bookMap.set(id, b)
+          })
 
         const resolveStudentName = (row: any) => {
           const direct = String(row?.student_name ?? row?.studentName ?? row?.full_name ?? row?.fullName ?? row?.name ?? '').trim()
