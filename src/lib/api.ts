@@ -431,6 +431,11 @@ export async function login(emailOrId: string, password: string, role: UserRole)
             throw new Error('Student not found. Please register this student first.')
         }
 
+        const accountStatus = String(row.status ?? 'active').toLowerCase()
+        if (accountStatus === 'suspended') {
+            throw new Error('This account has been deactivated by the library admin.')
+        }
+
         const passwordMatches = await passwordMatchesStoredValue(row.password_hash, password)
         if (!passwordMatches) {
             throw new Error('Invalid credentials')

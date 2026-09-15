@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS public.books (
   category TEXT NOT NULL,
   total_copies INTEGER NOT NULL CHECK (total_copies > 0),
   available_copies INTEGER NOT NULL CHECK (available_copies >= 0),
+  cover_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

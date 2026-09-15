@@ -1138,6 +1138,7 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
       category: r.category ?? '',
       copies: Number(r.total_copies ?? r.totalCopies ?? r.copies ?? 1),
       available: deriveBookAvailability(r, borrowingRt ?? []),
+      cover_url: r.coverUrl ?? r.cover_url ?? null,
     }))
     : searchResults
 
@@ -1276,9 +1277,13 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
               <tr key={b.id} className="bg-white hover:bg-green-50/50 transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-10 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-sky-50 to-blue-100 text-[9px] font-bold text-blue-700 shadow-sm">
-                      {b.title.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
-                    </div>
+                    {(b as any).cover_url ? (
+                      <img src={(b as any).cover_url} alt={b.title} className="h-12 w-10 rounded-md border border-gray-200 object-cover shadow-sm" />
+                    ) : (
+                      <div className="flex h-12 w-10 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-sky-50 to-blue-100 text-[9px] font-bold text-blue-700 shadow-sm">
+                        {b.title.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
+                      </div>
+                    )}
                     <div className="font-medium text-gray-900">{b.title}</div>
                   </div>
                 </td>
@@ -1737,62 +1742,249 @@ function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId
 function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const defaults = {
     name: 'Student',
-    studentId: 'N/A',
+    studentId: 'STU-2024-118',
     email: 'student@example.edu',
-    course: 'Unassigned',
-    card: 'N/A',
+    course: 'Computer Science',
+    program: 'Computer Science',
+    yearLevel: '2nd Year',
+    card: 'LIB-284920',
+    borrowedBooks: 4,
+    activeHolds: 2,
+    finesDue: 28,
+    membershipStatus: 'Active',
   }
+
   const [profile, setProfile] = useState({ ...defaults, ...(userProfile ?? {}) })
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({})
 
   useEffect(() => {
     setProfile((current) => ({ ...defaults, ...userProfile, ...current, ...((userProfile ?? {}) as any) }))
   }, [userProfile])
 
+  function handleFieldChange(field: 'name' | 'email' | 'program' | 'yearLevel', value: string) {
+    setProfile((current) => ({ ...current, [field]: value }))
+    setSaveMessage(null)
+    setFieldErrors((current) => ({ ...current, [field]: undefined }))
+  }
+
+  function validateProfile() {
+    const nextErrors: { name?: string; email?: string } = {}
+
+    if (!profile.name.trim()) {
+      nextErrors.name = 'Full name is required.'
+    }
+
+    if (!profile.email.trim()) {
+      nextErrors.email = 'Email is required.'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
+      nextErrors.email = 'Please enter a valid email address.'
+    }
+
+    setFieldErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
   function handleSaveProfile() {
+    if (!validateProfile()) return
     setSaveMessage('Profile updated successfully.')
   }
 
+  function handleReset() {
+    setProfile({ ...defaults, ...(userProfile ?? {}) })
+    setFieldErrors({})
+    setSaveMessage(null)
+  }
+
+  async function copyValue(value: string) {
+    if (!value || typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(value)
+      setSaveMessage('Copied to clipboard.')
+    } catch {
+      setSaveMessage('Copy failed. Please try again.')
+    }
+  }
+
+  const initials = (profile.name || 'Student')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || 'S'
+
   return (
-    <div>
-      <PageHeader title="My Profile" subtitle="Manage your account information." />
-      <div className="max-w-lg bg-white rounded-xl border border-green-100 shadow-sm p-6">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-green-500">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-            </svg>
-          </div>
-          <div>
-            <div className="font-bold text-green-900 text-lg">{profile.name}</div>
-            <div className="text-sm text-gray-500">{profile.studentId} · {profile.course.split(' — ')[0]}</div>
+    <div className="space-y-6">
+      <PageHeader title="My Profile" subtitle="Manage your account information and library status." />
+
+      <div className="overflow-hidden rounded-2xl border border-green-100 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-gradient-to-r from-green-50 via-emerald-50 to-white p-5 sm:p-6">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="group relative h-20 w-20 shrink-0">
+                <div className="flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-700 text-2xl font-bold text-white shadow-md">
+                  {initials}
+                </div>
+                <label className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900/55 opacity-0 transition group-hover:opacity-100">
+                  <div className="flex flex-col items-center gap-1 text-[10px] font-medium uppercase tracking-[0.16em] text-white">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                      <circle cx="12" cy="13" r="4" />
+                    </svg>
+                    Upload
+                  </div>
+                  <input type="file" className="hidden" />
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-bold text-slate-900">{profile.name}</h2>
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                    Active
+                  </span>
+                </div>
+                <p className="text-sm text-slate-500">{profile.studentId} · {profile.program || profile.course}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                    Verified Student
+                  </span>
+                  <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+                    Good Standing
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              Library Membership Status: {profile.membershipStatus}
+            </div>
           </div>
         </div>
-        <div className="grid gap-4">
-          {[
-            { label: 'Full Name', key: 'name' },
-            { label: 'Student ID', key: 'studentId' },
-            { label: 'Email', key: 'email' },
-            { label: 'Course / Year', key: 'course' },
-            { label: 'Library Card', key: 'card' },
-          ].map(({ label, key }) => (
-            <div key={label}>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
-              <input
-                type="text"
-                value={(profile as any)[key]}
-                onChange={(e) => {
-                  setProfile({ ...profile, [key]: e.target.value })
-                  setSaveMessage(null)
-                }}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
-              />
+
+        <div className="grid gap-6 p-5 sm:p-6 xl:grid-cols-[1.5fr_0.9fr]">
+          <div className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Full Name</label>
+                <input
+                  type="text"
+                  value={profile.name}
+                  onChange={(e) => handleFieldChange('name', e.target.value)}
+                  aria-invalid={Boolean(fieldErrors.name)}
+                  className={`w-full rounded-xl border bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 shadow-sm transition focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-3 focus:ring-emerald-100 ${fieldErrors.name ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
+                />
+                {fieldErrors.name && <p className="mt-1 text-xs text-red-600">{fieldErrors.name}</p>}
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Email Address</label>
+                <input
+                  type="email"
+                  value={profile.email}
+                  onChange={(e) => handleFieldChange('email', e.target.value)}
+                  aria-invalid={Boolean(fieldErrors.email)}
+                  className={`w-full rounded-xl border bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 shadow-sm transition focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-3 focus:ring-emerald-100 ${fieldErrors.email ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
+                />
+                {fieldErrors.email && <p className="mt-1 text-xs text-red-600">{fieldErrors.email}</p>}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Student ID</label>
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 text-slate-500">
+                      <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                    </svg>
+                    <span>{profile.studentId}</span>
+                  </div>
+                  <button type="button" onClick={() => copyValue(String(profile.studentId))} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-slate-300">Copy</button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Library Card</label>
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 text-slate-500">
+                      <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                    </svg>
+                    <span>{profile.card}</span>
+                  </div>
+                  <button type="button" onClick={() => copyValue(String(profile.card))} className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:border-slate-300">Copy</button>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Course / Program</label>
+                <select
+                  value={profile.program || profile.course}
+                  onChange={(e) => handleFieldChange('program', e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 shadow-sm transition focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-3 focus:ring-emerald-100"
+                >
+                  <option value="Computer Science">Computer Science</option>
+                  <option value="Information Technology">Information Technology</option>
+                  <option value="Business Administration">Business Administration</option>
+                  <option value="Engineering">Engineering</option>
+                  <option value="Education">Education</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Year Level</label>
+                <select
+                  value={profile.yearLevel}
+                  onChange={(e) => handleFieldChange('yearLevel', e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 shadow-sm transition focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-3 focus:ring-emerald-100"
+                >
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                  <option value="5th Year">5th Year</option>
+                </select>
+              </div>
             </div>
-          ))}
-          <button onClick={handleSaveProfile} className="mt-2 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
-            Save Changes
-          </button>
-          {saveMessage && <div className="text-sm text-green-700">{saveMessage}</div>}
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button type="button" onClick={handleReset} className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Cancel</button>
+              <button type="button" onClick={handleSaveProfile} className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-3 focus:ring-emerald-200">Save Changes</button>
+            </div>
+
+            {saveMessage && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {saveMessage}
+              </div>
+            )}
+          </div>
+
+          <aside className="space-y-4">
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Membership</div>
+              <div className="mt-3 inline-flex items-center rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                Active / Verified Student
+              </div>
+              <div className="mt-3 text-sm text-emerald-900">No overdue fines and borrowing privileges are enabled.</div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Borrowed Books</div>
+                <div className="mt-3 text-3xl font-bold text-slate-900">{profile.borrowedBooks}</div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Active Holds</div>
+                <div className="mt-3 text-3xl font-bold text-slate-900">{profile.activeHolds}</div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Fines Due</div>
+                <div className="mt-3 text-3xl font-bold text-red-600">₱{Number(profile.finesDue).toFixed(2)}</div>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
     </div>
@@ -2547,6 +2739,8 @@ function AdminUsers() {
   const { data: usersRt } = useSupabaseRealtime('student_login_accounts')
   const [users, setUsers] = useState(() => [])
   const [studentMap, setStudentMap] = useState<Record<string, string>>({})
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
     const syncUsers = async () => {
@@ -2598,6 +2792,29 @@ function AdminUsers() {
     setUsers(mapped)
   }, [usersRt])
 
+  async function handleToggleStatus(user: any) {
+    const nextStatus = user.status === 'suspended' ? 'active' : 'suspended'
+    try {
+      setUpdatingId(user.id)
+      setMessage(null)
+
+      const { error } = await supabase
+        .from('student_login_accounts')
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq('id', user.id)
+
+      if (error) throw error
+
+      setUsers((current) => current.map((row: any) => row.id === user.id ? { ...row, status: nextStatus } : row))
+      setMessage(`${user.fullName || 'This account'} has been ${nextStatus === 'suspended' ? 'deactivated' : 'reactivated'}.`)
+    } catch (err: any) {
+      console.error('[AdminUsers] toggle status failed', err)
+      setMessage(err?.message || 'Unable to update account status.')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
   // The live app uses student_login_accounts as the student source of truth.
   // Keep the display local and avoid querying legacy students rows that do not exist.
   useEffect(() => {
@@ -2607,8 +2824,9 @@ function AdminUsers() {
   return (
     <div>
       <PageHeader title="Users" subtitle="Student login accounts (student_login_accounts table)" />
+      {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
       <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
-        <Table headers={["Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Status"]}>
+        <Table headers={["Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Status", "Action"]}>
           {users.map((u: any) => (
             <Tr key={u.id}>
               <Td className="font-mono text-xs">{u.id}</Td>
@@ -2618,6 +2836,15 @@ function AdminUsers() {
               <Td>{u.course || '—'}</Td>
               <Td>{u.yearLevel || '—'}</Td>
               <Td><StatusBadge status={u.status || 'active'} /></Td>
+              <Td>
+                <button
+                  onClick={() => handleToggleStatus(u)}
+                  disabled={updatingId === u.id}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${u.status === 'suspended' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {updatingId === u.id ? 'Updating...' : u.status === 'suspended' ? 'Activate' : 'Deactivate'}
+                </button>
+              </Td>
             </Tr>
           ))}
         </Table>
@@ -3431,7 +3658,7 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
           onMenuClick={() => setMobileNavOpen(true)}
           userName={userProfile?.name ?? 'Student'}
           onProfileClick={() => {
-            setView('profile')
+            setView((current) => current === 'profile' ? 'dashboard' : 'profile')
             setMobileNavOpen(false)
           }}
         />
@@ -3571,25 +3798,62 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const pageSize = 10
   const [totalCount, setTotalCount] = useState<number>(0)
 
+  const normalizeRecentBorrowRow = (row: any) => {
+    const studentId = String(row?.student_id ?? row?.studentId ?? row?.student_code ?? row?.studentCode ?? '').trim()
+    const bookId = String(row?.book_id ?? row?.bookId ?? '').trim()
+    const dashboardStudent = Array.isArray(dashboard?.students)
+      ? dashboard.students.find((student: any) => String(student?.id ?? student?.student_id ?? student?.studentCode ?? '').trim() === studentId || String(student?.id ?? '').trim() === studentId)
+      : null
+    const dashboardBook = Array.isArray(dashboard?.books)
+      ? dashboard.books.find((book: any) => String(book?.id ?? '').trim() === bookId || String(book?.book_code ?? '').trim() === bookId)
+      : null
+
+    const studentName = String(
+      row?.student_name ?? row?.studentName ?? row?.full_name ?? row?.fullName ?? row?.name ?? dashboardStudent?.name ?? ''
+    ).trim() ||
+      (row?.login_full_name ?? '') ||
+      (row?.student?.name ?? '') ||
+      'Unknown student'
+
+    const bookTitle = String(
+      row?.book_title ?? row?.bookTitle ?? row?.title ?? row?.book_name ?? row?.book?.title ?? dashboardBook?.title ?? ''
+    ).trim() || 'Unknown book'
+
+    const dueValue = row?.due_date ?? row?.dueDate ?? row?.return_due_date ?? row?.returnDate ?? 'N/A'
+    const statusValue = String(row?.status ?? '').trim().toLowerCase() || inferLoanStatus(String(dueValue))
+
+    return {
+      id: row?.id,
+      txn: row?.txn_code ?? row?.txn ?? row?.id,
+      student: studentName || 'Unknown student',
+      book: bookTitle || 'Unknown book',
+      due: dueValue,
+      status: statusValue,
+    }
+  }
+
+  const sortRecentBorrowRows = (rows: any[]) => [...rows].sort((a: any, b: any) => {
+    const getSortTime = (value: any) => {
+      const raw = value?.created_at ?? value?.createdAt ?? value?.borrow_date ?? value?.borrowDate ?? value?.due_date ?? value?.dueDate ?? value?.id ?? ''
+      const time = Date.parse(String(raw))
+      return Number.isNaN(time) ? 0 : time
+    }
+
+    const aTime = getSortTime(a)
+    const bTime = getSortTime(b)
+
+    if (aTime === bTime) return String(b?.id ?? '').localeCompare(String(a?.id ?? ''))
+    return bTime - aTime
+  })
+
   useEffect(() => {
     let active = true
 
     async function loadRecent() {
       try {
-        // If dashboard provided recent records use them (with pagination), otherwise fetch from Supabase
-        if (dashboard?.records && Array.isArray(dashboard.records) && dashboard.records.length >= 0) {
-          const total = dashboard.records.length
-          const start = page * pageSize
-          const end = start + pageSize
-          if (active) {
-            setRecentRecords(dashboard.records.slice(start, end))
-            setTotalCount(total)
-          }
-          return
-        }
-
         const start = page * pageSize
         const end = start + pageSize - 1
+
         const { data: borrowRows, error: borrowErr, count } = await supabase
           .from('borrowing_records')
           .select('*', { count: 'exact' })
@@ -3597,43 +3861,112 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           .range(start, end)
 
         if (borrowErr) throw borrowErr
+
         if (!borrowRows || borrowRows.length === 0) {
+          if (dashboard?.records && Array.isArray(dashboard.records)) {
+            const normalized = sortRecentBorrowRows(dashboard.records.map((record: any) => normalizeRecentBorrowRow(record)))
+            if (active) {
+              setRecentRecords(normalized.slice(start, start + pageSize))
+              setTotalCount(normalized.length)
+            }
+            return
+          }
+
           if (active) setRecentRecords([])
           if (active) setTotalCount(count ?? 0)
           return
         }
 
-        const studentIds = [...new Set(borrowRows.map((r: any) => String(r.student_id ?? '').trim()).filter(Boolean))]
-        const bookIds = [...new Set(borrowRows.map((r: any) => String(r.book_id ?? '').trim()).filter(Boolean))]
+        const studentIds = [...new Set(borrowRows.map((r: any) => String(r.student_id ?? r.studentId ?? r.student_code ?? r.studentCode ?? '').trim()).filter(Boolean))]
+        const bookIds = [...new Set(borrowRows.map((r: any) => String(r.book_id ?? r.bookId ?? '').trim()).filter(Boolean))]
 
-        const { data: studentRows } = studentIds.length > 0 ? await supabase.from('students').select('id, name').in('id', studentIds) : { data: [] }
-        const { data: bookRows } = bookIds.length > 0 ? await supabase.from('books').select('id, title').in('id', bookIds) : { data: [] }
-        const { data: loginRowsByStudentId } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('id, student_id, student_code, full_name').in('student_id', studentIds) : { data: [] }
-        const { data: loginRowsById } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('id, student_id, student_code, full_name').in('id', studentIds) : { data: [] }
+        const { data: studentRows } = studentIds.length > 0 ? await supabase.from('students').select('id, name').in('id', studentIds).catch(() => ({ data: [] })) : { data: [] }
+        const { data: bookRows } = bookIds.length > 0 ? await supabase.from('books').select('id, title').in('id', bookIds).catch(() => ({ data: [] })) : { data: [] }
+        const { data: loginRowsByStudentId } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('*').in('student_id', studentIds).catch(() => ({ data: [] })) : { data: [] }
+        const { data: loginRowsById } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('*').in('id', studentIds).catch(() => ({ data: [] })) : { data: [] }
 
         const loginRows = [...(loginRowsByStudentId ?? []), ...(loginRowsById ?? [])]
 
-        const studentMap = new Map((studentRows ?? []).map((s: any) => [String(s.id ?? '').trim(), s]))
-        const loginMap = new Map()
-          ; (loginRows || []).forEach((l: any) => {
-            if (l?.student_id) loginMap.set(String(l.student_id).trim(), l)
-            if (l?.id) loginMap.set(String(l.id).trim(), l)
-            if (l?.student_code) loginMap.set(String(l.student_code).trim(), l)
-          })
-        const bookMap = new Map((bookRows ?? []).map((b: any) => [String(b.id ?? '').trim(), b]))
+        const studentMap = new Map<string, any>()
+        ;(studentRows ?? []).forEach((s: any) => {
+          const id = String(s?.id ?? '').trim()
+          const code = String(s?.student_code ?? '').trim()
+          if (id) studentMap.set(id, s)
+          if (code) studentMap.set(code, s)
+        })
 
-        const mapped = (borrowRows || []).map((r: any) => ({
-          id: r.id,
-          txn: r.txn_code ?? r.id,
-          student: (studentMap.get(String(r.student_id ?? '').trim())?.name) ?? (loginMap.get(String(r.student_id ?? '').trim())?.full_name) ?? String(r.student_id ?? '').slice(0, 8),
-          book: (bookMap.get(String(r.book_id ?? '').trim())?.title) ?? String(r.book_id ?? '').slice(0, 8),
-          due: r.due_date ?? r.dueDate ?? 'N/A',
-          status: (r.status ?? 'active').toLowerCase(),
-        }))
+        const loginMap = new Map<string, any>()
+        ;(loginRows || []).forEach((l: any) => {
+          const id = String(l?.id ?? '').trim()
+          const studentId = String(l?.student_id ?? '').trim()
+          const studentCode = String(l?.student_code ?? '').trim()
+          if (id) loginMap.set(id, l)
+          if (studentId) loginMap.set(studentId, l)
+          if (studentCode) loginMap.set(studentCode, l)
+        })
+        const bookMap = new Map<string, any>()
+        ;(bookRows ?? []).forEach((b: any) => {
+          const id = String(b?.id ?? '').trim()
+          if (id) bookMap.set(id, b)
+        })
+
+        const resolveStudentName = (row: any) => {
+          const direct = String(row?.student_name ?? row?.studentName ?? row?.full_name ?? row?.fullName ?? row?.name ?? '').trim()
+          if (direct) return direct
+
+          const keys = [
+            String(row?.student_id ?? row?.studentId ?? '').trim(),
+            String(row?.student_code ?? row?.studentCode ?? '').trim(),
+            String(row?.id ?? '').trim(),
+          ].filter(Boolean)
+
+          for (const key of keys) {
+            const loginRow = loginMap.get(key)
+            if (loginRow?.full_name) return String(loginRow.full_name).trim()
+
+            const studentRow = studentMap.get(key)
+            if (studentRow?.name) return String(studentRow.name).trim()
+          }
+
+          return 'Unknown student'
+        }
+
+        const resolveBookTitle = (row: any) => {
+          const direct = String(row?.book_title ?? row?.bookTitle ?? row?.title ?? row?.book_name ?? '').trim()
+          if (direct) return direct
+
+          const keys = [
+            String(row?.book_id ?? row?.bookId ?? '').trim(),
+            String(row?.book_code ?? row?.bookCode ?? '').trim(),
+          ].filter(Boolean)
+
+          for (const key of keys) {
+            const book = bookMap.get(key)
+            if (book?.title) return String(book.title).trim()
+          }
+
+          return 'Unknown book'
+        }
+
+        const mapped = (borrowRows || []).map((r: any) => {
+          const dueValue = r.due_date ?? r.dueDate ?? r.return_due_date ?? r.returnDate ?? 'N/A'
+          const computedStatus = String(r.status ?? '').trim().toLowerCase() || inferLoanStatus(String(dueValue))
+
+          return {
+            id: r.id,
+            txn: r.txn_code ?? r.id,
+            student: resolveStudentName(r),
+            book: resolveBookTitle(r),
+            due: dueValue,
+            status: computedStatus,
+          }
+        })
+
+        const sorted = sortRecentBorrowRows(mapped)
 
         if (active) {
-          setRecentRecords(mapped)
-          setTotalCount(count ?? 0)
+          setRecentRecords(sorted.slice(start, end + 1))
+          setTotalCount(count ?? sorted.length)
         }
       } catch (err) {
         console.warn('Unable to load recent borrowing records', err)

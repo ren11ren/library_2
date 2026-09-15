@@ -172,6 +172,7 @@ function mapBookRow(row: any): Book {
         isbn: row.isbn ?? row.book_code ?? row.id ?? '',
         total_copies: Number(row.total_copies ?? row.copies ?? 1),
         available_copies: Number(row.available_copies ?? row.available ?? Number(row.total_copies ?? row.copies ?? 1)),
+        cover_url: row.cover_url ?? row.coverUrl ?? null,
     } as Book
 }
 
@@ -248,6 +249,7 @@ export async function upsertBook(book: Partial<Book> & Pick<Book, 'book_code' | 
         category: String(book.category).trim(),
         total_copies: totalCopies,
         available_copies: Number((book as any).available ?? (book as any).available_copies ?? totalCopies),
+        cover_url: (book as any).cover_url ?? (book as any).coverUrl ?? null,
     }
 
     try {

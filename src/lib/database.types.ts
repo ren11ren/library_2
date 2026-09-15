@@ -76,6 +76,7 @@ export interface Database {
           category: string
           copies: number
           available: number
+          cover_url: string | null
           created_at: string
         }
         Insert: {
@@ -88,6 +89,7 @@ export interface Database {
           category: string
           copies?: number
           available?: number
+          cover_url?: string | null
           created_at?: string
         }
         Update: {
@@ -100,6 +102,7 @@ export interface Database {
           category?: string
           copies?: number
           available?: number
+          cover_url?: string | null
           created_at?: string
         }
       }

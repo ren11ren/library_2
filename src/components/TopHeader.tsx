@@ -14,7 +14,7 @@ export default function TopHeader({ onMenuClick, userName, onProfileClick }: { o
         <header className="sticky top-0 z-40 w-full bg-white border-b border-[#E5E7EB] px-3 py-3 sm:px-6">
             <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-3">
                 {/* Left: Branding */}
-                <div className="flex items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-4">
                     <button
                         type="button"
                         onClick={onMenuClick}
@@ -34,9 +34,9 @@ export default function TopHeader({ onMenuClick, userName, onProfileClick }: { o
 
                 {/* Right: Actions */}
                 <div className="flex items-center gap-3">
-                    <button className="relative p-2 rounded-md">
+                    <button className="relative flex h-10 w-10 items-center justify-center rounded-md text-[#10B981] transition hover:bg-slate-100" aria-label="Notifications">
                         <Bell size={18} className="text-[#10B981]" />
-                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#10B981] ring-1 ring-white" />
+                        <span className="absolute right-[8px] top-[7px] h-2.5 w-2.5 rounded-full bg-[#10B981] ring-2 ring-white" />
                     </button>
 
                     <button
