@@ -40,9 +40,9 @@ export default function TopNav() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button className="relative w-9 h-9 rounded-lg bg-white flex items-center justify-center border border-[#E5E7EB]">
+                    <button className="relative w-9 h-9 rounded-lg bg-white flex items-center justify-center border border-[#E5E7EB] mr-2">
                         <Bell size={16} />
-                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#EF4444]" />
+                        <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-[#EF4444] ring-2 ring-white" aria-hidden="true" />
                     </button>
                     <button className="flex items-center gap-2 bg-white border border-[#E5E7EB] rounded-full px-3 py-1">
                         <div className="w-7 h-7 rounded-full bg-[#F3F4F6] flex items-center justify-center text-sm font-semibold">JR</div>

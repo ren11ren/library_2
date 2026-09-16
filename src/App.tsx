@@ -1115,6 +1115,7 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [detailBook, setDetailBook] = useState<any | null>(null)
 
   const resolvedBorrowStudentId = [studentId, userProfile?.studentCode, userProfile?.studentId]
     .map((value) => String(value ?? '').trim())
@@ -1274,7 +1275,7 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
           </thead>
           <tbody className="divide-y divide-green-50">
             {filtered.map((b) => (
-              <tr key={b.id} className="bg-white hover:bg-green-50/50 transition-colors">
+              <tr key={b.id} onClick={() => setDetailBook(b)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailBook(b) } }} className="bg-white hover:bg-green-50/50 transition-colors cursor-pointer">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     {(b as any).cover_url ? (
@@ -1314,6 +1315,35 @@ function SearchBooks({ studentId, userProfile }: { studentId?: string; userProfi
           </tbody>
         </table>
       </div>
+
+      {detailBook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex gap-4">
+              <div className="shrink-0">
+                {(detailBook as any).cover_url ? (
+                  <img src={(detailBook as any).cover_url} alt={detailBook.title} className="h-36 w-28 rounded-md object-cover border" />
+                ) : (
+                  <div className="h-36 w-28 rounded-md border bg-gray-50 flex items-center justify-center text-sm font-bold">No Cover</div>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-900">{detailBook.title}</h3>
+                <div className="text-sm text-gray-600">{detailBook.author}</div>
+                <div className="mt-2 text-sm">ISBN: <span className="font-mono">{detailBook.isbn}</span></div>
+                <div className="mt-1 text-sm">Publisher: {detailBook.publisher || '—'}</div>
+                <div className="mt-1 text-sm">Category: <span className="inline-flex rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">{detailBook.category}</span></div>
+                <div className="mt-2 text-sm">Available: <span className="font-medium text-green-700">{detailBook.available} / {detailBook.copies}</span></div>
+
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => { setBorrowModal(detailBook); setDetailBook(null) }} className="rounded-md bg-green-600 px-4 py-2 text-sm text-white">Borrow</button>
+                  <button onClick={() => setDetailBook(null)} className="rounded-md border px-4 py-2 text-sm">Close</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
@@ -2351,7 +2381,7 @@ function AdminBooks() {
           </div>
         </div>
       )}
-      <div className="flex flex-col gap-3 mb-5 lg:flex-row">
+      <div className="flex flex-col gap-3 mb-5 md:flex-row">
         <div className="relative flex-1">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Icons.Search /></span>
           <input
@@ -2362,12 +2392,12 @@ function AdminBooks() {
             className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100 transition"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Icons.Filter />
+        <div className="flex items-center gap-2 md:ml-2 md:items-stretch md:w-auto w-full">
+          <div className="hidden md:flex items-center px-3 text-gray-600"><Icons.Filter /></div>
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="min-w-[220px] py-2.5 px-3 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 transition"
+            className="w-full md:min-w-[220px] py-2.5 px-3 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 transition"
           >
             {libraryClassificationCategories.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
@@ -2377,7 +2407,59 @@ function AdminBooks() {
           Add Book
         </button>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-green-100 bg-white">
+      {/* Mobile: card list (stacked) */}
+      <div className="block md:hidden space-y-3">
+        {filtered.map((b) => (
+          <article
+            key={b.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => startEditBook(b)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEditBook(b) } }}
+            className="rounded-xl border border-green-100 bg-white p-3 shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-100"
+          >
+            <div className="flex items-start gap-3">
+              <div className="shrink-0">
+                {(b as any).cover_url ? (
+                  <img src={(b as any).cover_url} alt={b.title} className="h-20 w-14 rounded-md border border-gray-200 object-cover shadow-sm" />
+                ) : (
+                  <div className="flex h-20 w-14 items-center justify-center rounded-md border border-gray-200 bg-gradient-to-br from-white to-blue-50 text-sm font-bold text-blue-700 shadow-sm">
+                    {b.title.split(' ').map((word: string) => word[0]).slice(0, 2).join('').toUpperCase() || 'BK'}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 truncate">{b.title}</div>
+                    <div className="text-xs text-gray-600">{b.author}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${b.available > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {b.available > 0 ? 'Available' : 'Unavailable'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                  <span className="font-mono">{b.isbn}</span>
+                  <span className="mx-1">•</span>
+                  <span className="inline-flex rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 truncate">{b.category}</span>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <button onClick={(e) => { e.stopPropagation(); startEditBook(b) }} className="rounded-lg bg-orange-400 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-500">Edit</button>
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(b) }} className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600">Delete</button>
+                </div>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {/* Desktop: table view */}
+      <div className="hidden md:block overflow-x-auto rounded-xl border border-green-100 bg-white">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="bg-green-50 text-left">
@@ -2426,8 +2508,8 @@ function AdminBooks() {
                 <td className="px-4 py-3 text-gray-500">{b.updatedOn}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => startEditBook(b)} className="rounded-lg bg-orange-400 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-500">Edit</button>
-                    <button onClick={() => setDeleteTarget(b)} className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600">Delete</button>
+                    <button onClick={(e) => { e.stopPropagation(); startEditBook(b) }} className="rounded-lg bg-orange-400 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-500">Edit</button>
+                    <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(b) }} className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600">Delete</button>
                   </div>
                 </td>
               </tr>
