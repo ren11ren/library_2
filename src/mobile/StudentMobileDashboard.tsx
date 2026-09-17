@@ -118,7 +118,10 @@ export default function StudentMobileDashboard({ onNavigate, onLogout, userProfi
                 dueDate: record.dueDate ?? record.due_date ?? 'N/A',
                 status: normalizeLoanStatus(record.dueDate ?? record.due_date ?? '')
             }))
-            setLoanRows(mapped)
+            // include cover_url if available so ActiveLoansCard can show thumbnails
+            const mappedWithCovers = mapped.map((r) => ({ ...r, cover_url: (records.find((rec: any) => String(rec.id ?? `${rec.title}-${rec.dueDate}`) === r.id)?.cover_url) ?? null }))
+            setLoanRows(mappedWithCovers)
+
         }
 
         void loadLoans()

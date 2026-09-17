@@ -7,7 +7,7 @@ export default function ActiveLoansCard({
     rows = [],
 }: {
     onViewCard?: () => void
-    rows?: Array<{ title: string; dueDate?: string; status?: string }>
+    rows?: Array<{ title: string; dueDate?: string; status?: string; cover_url?: string | null }>
 } = {}) {
     const activeRow = rows[0] ?? { title: 'No active loans', dueDate: 'N/A', status: 'active' }
 
@@ -26,8 +26,19 @@ export default function ActiveLoansCard({
 
             <div className="bg-white p-3 rounded-lg border border-[#F3F4F6]">
                 <div className="flex flex-col gap-2">
-                    <div className="text-sm font-medium break-words">{activeRow.title}</div>
-                    <div className="text-xs text-gray-500">{activeRow.dueDate || 'N/A'}</div>
+                    <div className="flex items-center gap-3">
+                        {(activeRow as any).cover_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={(activeRow as any).cover_url} alt={activeRow.title} className="h-12 w-10 rounded-md border border-gray-200 object-cover shadow-sm" />
+                        ) : (
+                            <div className="h-12 w-10 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center text-xs font-bold text-gray-600">No
+                                Cover</div>
+                        )}
+                        <div>
+                            <div className="text-sm font-medium break-words">{activeRow.title}</div>
+                            <div className="text-xs text-gray-500">{activeRow.dueDate || 'N/A'}</div>
+                        </div>
+                    </div>
                     <div className="flex items-center gap-2 mt-2">
                         <div className="text-xs px-2 py-1 rounded-full bg-[#E6F4EA] text-[#00A86B]">{activeRow.status === 'overdue' ? 'Overdue' : activeRow.status === 'due-soon' ? 'Due soon' : 'Active'}</div>
                         <button onClick={() => onViewCard?.()} className="ml-auto h-9 px-3 rounded-lg border border-[#E5E7EB] text-sm">View Card</button>

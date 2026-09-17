@@ -818,6 +818,7 @@ async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ bo
         borrowDate: record?.borrow_date ?? 'N/A',
         returnDate: record?.return_date ?? 'Pending',
         status,
+        cover_url: book?.cover_url ?? book?.coverUrl ?? null,
       }
     })
   } catch (error) {
@@ -978,6 +979,7 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
             borrowDate: row.borrowDate ?? row.borrow_date ?? 'N/A',
             dueDate,
             status: String(status).toLowerCase(),
+            cover_url: row.cover_url ?? row.coverUrl ?? null,
           }
         }))
       } catch {
@@ -1046,9 +1048,17 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
             {rows.length === 0 ? (
               <div className="rounded-lg border border-dashed border-green-200 bg-green-50 p-5 text-sm text-gray-500">No active loans yet.</div>
             ) : (
-              <Table headers={["Book Title", "Due Date", "Status", "Action"]}>
+              <Table headers={["Cover", "Book Title", "Due Date", "Status", "Action"]}>
                 {rows.map((b) => (
                   <Tr key={b.id}>
+                    <Td className="w-20">
+                      {(b as any).cover_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={(b as any).cover_url} alt={b.title} className="h-12 w-10 rounded-md border border-gray-200 object-cover shadow-sm" />
+                      ) : (
+                        <div className="h-12 w-10 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center text-xs font-bold text-gray-600">No Cover</div>
+                      )}
+                    </Td>
                     <Td className="font-medium text-gray-900">{b.title}</Td>
                     <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>{b.dueDate || 'N/A'}</Td>
                     <Td><StatusBadge status={b.status} /></Td>
@@ -1567,9 +1577,17 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
       {rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowed books yet for this student.</div>
       ) : (
-        <Table headers={['Book Title', 'Author', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
+        <Table headers={['Cover', 'Book Title', 'Author', 'Borrow Date', 'Due Date', 'Status', 'Action']}>
           {rows.map((b) => (
             <Tr key={`${b.studentId ?? 'student'}-${b.id}`}>
+              <Td className="w-20">
+                {(b as any).cover_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={String((b as any).cover_url)} alt={b.title} className="w-12 h-16 object-cover rounded" />
+                ) : (
+                  <div className="w-12 h-16 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-600">No cover</div>
+                )}
+              </Td>
               <Td className="font-medium text-gray-900">{b.title}</Td>
               <Td>{b.author}</Td>
               <Td>{b.borrowDate}</Td>
@@ -1642,9 +1660,17 @@ function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; stud
       {historyRows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-green-200 bg-white p-6 text-sm text-gray-500">No borrowing history yet.</div>
       ) : (
-        <Table headers={['Book Title', 'Author', 'Borrow Date', 'Return Date', 'Status']}>
+        <Table headers={['Cover', 'Book Title', 'Author', 'Borrow Date', 'Return Date', 'Status']}>
           {historyRows.map((b, i) => (
             <Tr key={`${b.title}-${b.borrowDate}-${i}`}>
+              <Td className="w-20">
+                {((b as any).cover_url) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={String((b as any).cover_url)} alt={b.title} className="w-12 h-16 object-cover rounded" />
+                ) : (
+                  <div className="w-12 h-16 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-600">No cover</div>
+                )}
+              </Td>
               <Td className="font-medium text-gray-900">{b.title}</Td>
               <Td>{b.author}</Td>
               <Td>{b.borrowDate}</Td>

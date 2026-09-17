@@ -190,7 +190,7 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
 
         if (updateError) throw new Error(updateError.message)
 
-            if (updatedRecord?.book_id) {
+        if (updatedRecord?.book_id) {
             const { data: bookRow, error: bookLookupError } = await supabase
                 .from('books')
                 .select('id, available_copies, available')
@@ -306,6 +306,7 @@ export async function fetchStudentBorrowingRecords(studentId?: string) {
                 status: record.status ?? 'active',
                 studentId: record.student_id,
                 cardNo: record.card_no ?? null,
+                cover_url: book?.cover_url ?? book?.coverUrl ?? null,
             }
         })
     } catch (err) {
