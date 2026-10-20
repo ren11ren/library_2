@@ -2060,14 +2060,11 @@ function Profile({ userProfile, onProfileSave }: { userProfile?: { name?: string
       let avatarUrl = isRemoteAvatar ? avatarPreview : (profile.avatar_url ?? null)
 
       if (avatarFile) {
-        const hasRemoteStorage = false
-        if (!hasRemoteStorage) {
-          setAvatarPreview(profile.avatar_url ?? null)
-          setAvatarFile(null)
-          setSaveMessage('Avatar preview updated locally only. Remote upload is not configured for this environment.')
-          setSaveState('saved')
-          return
+        const localAvatarUrl = String(avatarPreview ?? profile.avatar_url ?? '').trim()
+        if (localAvatarUrl) {
+          avatarUrl = localAvatarUrl
         }
+        setAvatarFile(null)
       }
 
       const loginUpdatePayload = {
@@ -3313,6 +3310,14 @@ function AdminStudents() {
               <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Course</span><span className="text-gray-800">{selected.course}</span></div>
               <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Card No.</span><span className="font-mono text-green-700 font-semibold">{selected.card}</span></div>
               <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Email</span><span className="text-gray-800">{selected.email}</span></div>
+              <div className="rounded-xl bg-gray-50 px-3 py-2">
+                <div className="mb-1 flex items-center justify-between"><span className="text-gray-500">Active Borrowings</span><span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${getActiveBorrowingDetails(selected, borrowingRt ?? [], booksRt ?? []).count > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{getActiveBorrowingDetails(selected, borrowingRt ?? [], booksRt ?? []).count}</span></div>
+                {getActiveBorrowingDetails(selected, borrowingRt ?? [], booksRt ?? []).titles.length > 0 ? (
+                  <div className="text-xs text-slate-600 leading-5">{getActiveBorrowingDetails(selected, borrowingRt ?? [], booksRt ?? []).titles.slice(0, 3).join(', ')}</div>
+                ) : (
+                  <div className="text-xs text-slate-500">No active book</div>
+                )}
+              </div>
               <div className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2"><span className="text-gray-500">Status</span><span><StatusBadge status={selected.status} /></span></div>
             </div>
             <button onClick={() => setSelected(null)} className="mt-6 w-full rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700">Close</button>
@@ -3325,10 +3330,47 @@ function AdminStudents() {
 
 function AdminUsers() {
   const { data: usersRt } = useSupabaseRealtime('student_login_accounts')
+  const { data: borrowingRt } = useSupabaseRealtime('borrowing_records')
+  const { data: booksRt } = useSupabaseRealtime('books')
   const [users, setUsers] = useState(() => [])
   const [studentMap, setStudentMap] = useState<Record<string, string>>({})
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+
+  const getActiveBorrowingDetails = (user: any, rows: any[] = [], books: any[] = []) => {
+    const studentId = String(user?.studentId ?? user?.student_id ?? '').trim()
+    const studentCode = String(user?.studentCode ?? user?.student_code ?? '').trim()
+    const userId = String(user?.id ?? '').trim()
+
+    const activeRecords = (rows ?? []).filter((record: any) => {
+      const recordStatus = String(record?.status ?? '').trim().toLowerCase()
+      const hasReturnDate = !!(record?.return_date ?? record?.returnDate)
+      if (hasReturnDate || ['returned'].includes(recordStatus)) return false
+
+      const rowStudentId = String(record?.student_id ?? record?.studentId ?? '').trim()
+      const rowStudentCode = String(record?.student_code ?? record?.studentCode ?? '').trim()
+      const rowLoginId = String(record?.login_id ?? record?.loginId ?? '').trim()
+
+      return (
+        rowStudentId === studentId
+        || rowStudentCode === studentCode
+        || rowLoginId === userId
+        || rowStudentId === userId
+        || rowStudentCode === userId
+      )
+    })
+
+    const titles = activeRecords.map((record: any) => {
+      const bookId = String(record?.book_id ?? record?.bookId ?? '').trim()
+      const book = (books ?? []).find((item: any) => String(item?.id ?? '').trim() === bookId)
+      return String(book?.title ?? record?.book_title ?? record?.bookTitle ?? 'Unknown book').trim() || 'Unknown book'
+    }).filter(Boolean)
+
+    return {
+      count: activeRecords.length,
+      titles,
+    }
+  }
 
   useEffect(() => {
     const syncUsers = async () => {
@@ -3416,7 +3458,7 @@ function AdminUsers() {
       <PageHeader title="Users" subtitle="Student login accounts (student_login_accounts table)" />
       {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
       <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
-        <Table headers={["Photo", "Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Status", "Action"]}>
+        <Table headers={["Photo", "Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Active Borrowing", "Status", "Action"]}>
           {users.map((u: any) => {
             const initials = (u.fullName || 'ST')
               .split(/\s+/)
@@ -3424,6 +3466,7 @@ function AdminUsers() {
               .slice(0, 2)
               .map((part: string) => part[0]?.toUpperCase() ?? '')
               .join('') || 'ST'
+            const activeBorrowing = getActiveBorrowingDetails(u, borrowingRt ?? [], booksRt ?? [])
 
             return (
               <Tr key={u.id}>
@@ -3442,6 +3485,21 @@ function AdminUsers() {
                 <Td className="font-mono text-xs">{u.studentCode ? (studentMap[u.studentCode] ?? u.studentCode) : 'NULL'}</Td>
                 <Td>{u.course || '—'}</Td>
                 <Td>{u.yearLevel || '—'}</Td>
+                <Td>
+                  {activeBorrowing.count > 0 ? (
+                    <div className="space-y-1">
+                      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        {activeBorrowing.count}
+                      </span>
+                      <div className="text-xs text-slate-600 leading-4">
+                        {activeBorrowing.titles.slice(0, 2).join(', ')}
+                        {activeBorrowing.titles.length > 2 ? ' + more' : ''}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-500">No active book</span>
+                  )}
+                </Td>
                 <Td><StatusBadge status={u.status || 'active'} /></Td>
                 <Td>
                   <button
@@ -4893,7 +4951,12 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const monthlyBorrowings = stats?.monthlyBorrowings ?? []
   const categoryCounts = stats?.categoryCounts ?? []
 
-  const monthlyLabels = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const currentMonthIndex = new Date().getMonth()
+  const monthlyLabels = Array.from({ length: 12 }, (_, offset) => {
+    const index = (currentMonthIndex - (11 - offset) + 12) % 12
+    return monthNames[index]
+  })
   const chartValues = monthlyBorrowings.length > 0 ? monthlyBorrowings.slice(-12) : Array(12).fill(0)
   const chartMax = Math.max(40, ...chartValues, 1)
   const yTicks = [0, 10, 20, 30, 40]
