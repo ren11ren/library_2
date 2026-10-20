@@ -144,7 +144,7 @@ export async function login(emailOrId: string, password: string, role: UserRole)
     const candidate = APP_USERS.find((u) => u.password === password && u.role === role && (u.email.toLowerCase() === identifier || u.email.toLowerCase().includes(identifier)))
     if (!candidate) {
         // try student code
-        const student = STUDENTS.find((s) => s.student_code.toLowerCase() === identifier || s.student_code.toLowerCase() === `stu-${identifier}`)
+            const student = STUDENTS.find((s) => s.student_code.toLowerCase() === identifier || s.student_code.toLowerCase() === `stu-${identifier}`)
         if (student) {
             const user = APP_USERS.find((u) => u.student_id === student.id && u.password === password && u.role === role)
             if (user) return { user, student, card: CARDS.find((c) => c.student_id === student.id) ?? null }

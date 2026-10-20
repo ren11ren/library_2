@@ -421,10 +421,10 @@ export async function login(emailOrId: string, password: string, role: UserRole)
 
         if (loginError) throw loginError
 
-        const row = (loginRows ?? []).find((candidate: any) => rowMatchesStudentIdentifier(candidate, targetIdentifiers)) ?? (loginRows ?? [])[0]
+        const row = (loginRows ?? []).find((candidate: any) => rowMatchesStudentIdentifier(candidate, targetIdentifiers))
 
         if (!row) {
-            throw new Error('Student not found. Please register this student first.')
+            throw new Error('Student not found. Please log in with your exact student ID, email, or registered name.')
         }
 
         const accountStatus = String(row.status ?? 'active').toLowerCase()
