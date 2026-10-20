@@ -3,9 +3,35 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name TEXT NOT NULL,
+  email TEXT,
+  student_id TEXT,
+  student_code TEXT,
+  course TEXT,
+  year_level TEXT,
+  card TEXT,
+  membership_status TEXT,
+  borrowed_books INTEGER NOT NULL DEFAULT 0,
+  active_holds INTEGER NOT NULL DEFAULT 0,
+  fines_due NUMERIC(10,2) NOT NULL DEFAULT 0,
+  avatar_url TEXT,
   role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'librarian')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS email TEXT,
+  ADD COLUMN IF NOT EXISTS student_id TEXT,
+  ADD COLUMN IF NOT EXISTS student_code TEXT,
+  ADD COLUMN IF NOT EXISTS course TEXT,
+  ADD COLUMN IF NOT EXISTS year_level TEXT,
+  ADD COLUMN IF NOT EXISTS card TEXT,
+  ADD COLUMN IF NOT EXISTS membership_status TEXT,
+  ADD COLUMN IF NOT EXISTS borrowed_books INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS active_holds INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS fines_due NUMERIC(10,2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS public.books (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -29,6 +55,19 @@ CREATE TABLE IF NOT EXISTS public.borrow_records (
   status TEXT NOT NULL DEFAULT 'borrowed' CHECK (status IN ('borrowed', 'returned', 'overdue'))
 );
 
+CREATE TABLE IF NOT EXISTS public.book_returns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  borrow_record_id UUID NOT NULL REFERENCES public.borrow_records(id) ON DELETE CASCADE,
+  book_id UUID NOT NULL REFERENCES public.books(id) ON DELETE CASCADE,
+  student_id UUID NOT NULL,
+  returned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  return_date DATE NOT NULL,
+  condition TEXT,
+  remark TEXT,
+  status TEXT NOT NULL DEFAULT 'returned' CHECK (status IN ('returned', 'late', 'damaged')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -36,11 +75,40 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO public.profiles (id, full_name, role, created_at)
+  INSERT INTO public.profiles (
+    id,
+    full_name,
+    email,
+    student_id,
+    student_code,
+    course,
+    year_level,
+    card,
+    membership_status,
+    borrowed_books,
+    active_holds,
+    fines_due,
+    avatar_url,
+    role,
+    created_at,
+    updated_at
+  )
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data ->> 'full_name', split_part(NEW.email, '@', 1)),
+    NEW.email,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    'Active',
+    0,
+    0,
+    0,
+    NULL,
     'member',
+    NOW(),
     NOW()
   )
   ON CONFLICT (id) DO NOTHING;
@@ -108,6 +176,7 @@ CREATE TABLE IF NOT EXISTS public.students (
   course TEXT,
   year_level TEXT,
   status TEXT,
+  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -120,6 +189,7 @@ CREATE TABLE IF NOT EXISTS public.student_login_accounts (
   year_level TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+  avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -183,6 +253,7 @@ CREATE TABLE IF NOT EXISTS public.library_announcements (
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.borrow_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.book_returns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_login_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.library_cards ENABLE ROW LEVEL SECURITY;
@@ -253,6 +324,25 @@ ON public.borrow_records
 FOR UPDATE
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Book returns are viewable by everyone" ON public.book_returns;
+CREATE POLICY "Book returns are viewable by everyone"
+ON public.book_returns
+FOR SELECT
+USING (true);
+
+DROP POLICY IF EXISTS "Book returns are writable by everyone" ON public.book_returns;
+CREATE POLICY "Book returns are writable by everyone"
+ON public.book_returns
+FOR INSERT
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Book returns are updatable by everyone" ON public.book_returns;
+CREATE POLICY "Book returns are updatable by everyone"
+ON public.book_returns
+FOR UPDATE
+USING (true)
+WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Students are viewable by everyone" ON public.students;
 CREATE POLICY "Students are viewable by everyone"
@@ -393,50 +483,5 @@ ON public.library_announcements
 FOR DELETE
 USING (true);
 
-INSERT INTO public.books (id, title, author, isbn, category, total_copies, available_copies, created_at)
-VALUES
-  ('11111111-aaaa-0000-0000-000000000001','Introduction to Algorithms','Cormen, Leiserson, Rivest','BK-001','Computer Science',3,2,'2025-01-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000002','The Art of Computer Programming','Donald E. Knuth','BK-002','Computer Science',2,0,'2025-02-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000003','Clean Code','Robert C. Martin','BK-003','Software Engineering',4,3,'2025-03-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000004','Design Patterns','Gang of Four','BK-004','Software Engineering',2,1,'2025-04-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000005','Structure and Interpretation','Abelson & Sussman','BK-005','Computer Science',1,1,'2025-05-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000006','Database System Concepts','Silberschatz et al.','BK-006','Database',5,4,'2025-06-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000007','Computer Networks','Andrew Tanenbaum','BK-007','Networking',3,3,'2025-07-01T00:00:00Z'),
-  ('11111111-aaaa-0000-0000-000000000008','Operating System Concepts','Silberschatz et al.','BK-008','Computer Science',2,2,'2025-08-01T00:00:00Z')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO public.students (id, student_code, name, email, course, year_level, status, created_at)
-VALUES
-  ('11111111-1111-1111-1111-111111111111','STU-2021-001','Maria Santos','maria.santos@college.edu','BS Computer Science','4th Year','active','2025-01-01T00:00:00Z'),
-  ('11111111-1111-1111-1111-222222222222','STU-2021-002','Juan dela Cruz','juan.delacruz@college.edu','BSIT','4th Year','active','2025-01-02T00:00:00Z'),
-  ('11111111-1111-1111-1111-333333333333','STU-2022-015','Ana Reyes','ana.reyes@college.edu','BSCS','3rd Year','suspended','2026-01-01T00:00:00Z'),
-  ('11111111-1111-1111-1111-444444444444','STU-2023-008','Carlo Bautista','carlo.bautista@college.edu','BSECE','2nd Year','active','2025-06-01T00:00:00Z'),
-  ('11111111-1111-1111-1111-555555555555','STU-2023-019','Lena Villanueva','lena.villanueva@college.edu','BSME','2nd Year','active','2025-07-01T00:00:00Z')
-ON CONFLICT (id) DO NOTHING;
----------
-INSERT INTO public.app_users (id, email, password, role, student_id, created_at)
-VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','maria.santos@college.edu','demo123','student','11111111-1111-1111-1111-111111111111','2025-01-01T00:00:00Z'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb','juan.delacruz@college.edu','demo123','student','11111111-1111-1111-1111-222222222222','2025-01-02T00:00:00Z'),
-  ('cccccccc-cccc-cccc-cccc-cccccccccccc','librarian@college.edu','admin123','admin',NULL,'2025-01-03T00:00:00Z')
-ON CONFLICT (email) DO NOTHING;
-
-INSERT INTO public.library_cards (id, card_no, student_id, issue_date, expiry_date, status, created_at)
-VALUES
-  ('22222222-aaaa-0000-0000-000000000001','LC-0042','11111111-1111-1111-1111-111111111111','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
-  ('22222222-aaaa-0000-0000-000000000002','LC-0043','11111111-1111-1111-1111-222222222222','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
-  ('22222222-aaaa-0000-0000-000000000003','LC-0061','11111111-1111-1111-1111-333333333333','2025-08-01','2026-08-01','suspended','2025-08-01T00:00:00Z'),
-  ('22222222-aaaa-0000-0000-000000000004','LC-0089','11111111-1111-1111-1111-444444444444','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z'),
-  ('22222222-aaaa-0000-0000-000000000005','LC-0104','11111111-1111-1111-1111-555555555555','2025-08-01','2026-08-01','active','2025-08-01T00:00:00Z')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO public.borrowing_records (id, txn_code, student_id, book_id, borrow_date, due_date, return_date, status, notified, condition, created_at)
-VALUES
-  (gen_random_uuid(),'TXN-2025-001','11111111-1111-1111-1111-111111111111','11111111-aaaa-0000-0000-000000000001','2025-07-25','2025-08-08',NULL,'overdue',true,NULL,'2025-07-25T00:00:00Z'),
-  (gen_random_uuid(),'TXN-2025-002','11111111-1111-1111-1111-222222222222','11111111-aaaa-0000-0000-000000000003','2025-08-01','2025-08-15',NULL,'due-soon',false,NULL,'2025-08-01T00:00:00Z')
-ON CONFLICT (txn_code) DO NOTHING;
-
-INSERT INTO public.settings (id, library_name, borrow_period_days, max_books_per_student, fine_per_day, admin_email)
-VALUES
-  (1, 'Greenfield College Library', 14, 3, 5.0, 'librarian@college.edu')
-ON CONFLICT (id) DO NOTHING;
+-- Seed data is intentionally left empty.
+-- The app should create records through its live save flow and persist them into the database.

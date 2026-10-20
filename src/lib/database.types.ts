@@ -42,6 +42,7 @@ export interface Database {
           course: string
           year_level: string
           status: AccountStatus
+          avatar_url: string | null
           created_at: string
         }
         Insert: {
@@ -52,6 +53,7 @@ export interface Database {
           course: string
           year_level?: string
           status?: AccountStatus
+          avatar_url?: string | null
           created_at?: string
         }
         Update: {
@@ -62,6 +64,7 @@ export interface Database {
           course?: string
           year_level?: string
           status?: AccountStatus
+          avatar_url?: string | null
           created_at?: string
         }
       }

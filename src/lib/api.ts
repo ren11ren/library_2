@@ -173,6 +173,9 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
 
         if (lookupError) throw new Error(lookupError.message)
         if (!existingRecord) throw new Error('Borrow record not found.')
+        if (String(existingRecord.status ?? '').toLowerCase() !== 'return_requested') {
+            throw new Error('This return must be requested by the student and approved by the admin before it is finalized.')
+        }
 
         const returnDate = String(finalReturnDate ?? existingRecord.return_date ?? new Date().toISOString().slice(0, 10)).slice(0, 10)
         const tempRemark = String(finalRemark ?? existingRecord.condition ?? 'Returned').trim() || 'Returned.'
@@ -189,6 +192,23 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
             .maybeSingle()
 
         if (updateError) throw new Error(updateError.message)
+
+        try {
+            await supabase.from('book_returns').insert([
+                {
+                    borrow_record_id: updatedRecord?.id ?? recordId,
+                    book_id: updatedRecord?.book_id ?? null,
+                    student_id: updatedRecord?.student_id ?? null,
+                    return_date: returnDate,
+                    returned_at: new Date().toISOString(),
+                    condition: tempRemark,
+                    remark: tempRemark,
+                    status: 'returned',
+                },
+            ])
+        } catch (returnLogError) {
+            console.warn('[processReturn] book_returns insert failed, but loan was still marked returned.', returnLogError)
+        }
 
         if (updatedRecord?.book_id) {
             const { data: bookRow, error: bookLookupError } = await supabase
@@ -226,7 +246,7 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
 
     if (!matchedStudent) throw new Error('Student not found. Please choose a valid student record.')
 
-    const { data: allBooks, error: bookErr } = await supabase.from('books').select('*').limit(200)
+    const { data: allBooks, error: bookErr } = await supabase.from('books').select('*').limit(10)
     if (bookErr) throw bookErr
 
     const matchedBook = findBookMatch(allBooks ?? [], bookQuery)
@@ -243,6 +263,9 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
 
     if (recordErr) throw new Error(recordErr.message)
     if (!activeRecord) throw new Error('No active loan found for this student and book.')
+    if (String(activeRecord.status ?? '').toLowerCase() !== 'return_requested') {
+        throw new Error('This return has not been requested for review. The student must submit a return request first.')
+    }
 
     const updated = await processReturn(String(activeRecord.id), finalReturnDate, finalRemark)
     return updated
@@ -334,7 +357,7 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
         const loginRow = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, identifiers)) ?? null
         if (!loginRow) throw new Error('Student not found. Please register this student first.')
 
-        const { data: allBooks, error: listErr } = await supabase.from('books').select('*').limit(200)
+        const { data: allBooks, error: listErr } = await supabase.from('books').select('*').limit(10)
         if (listErr) throw listErr
 
         const normalizedBookId = String(bookId ?? '').trim()
@@ -382,35 +405,7 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
 }
 
 export async function returnBook(recordId: string) {
-    try {
-        return await sbReturnBook(recordId)
-    } catch (err) {
-        console.debug('[api] supabase return failed, using custom student-login fallback', err)
-        try {
-            const returnDate = new Date().toISOString().slice(0, 10)
-            const { data: updatedRecord, error } = await supabase
-                .from('borrowing_records')
-                .update({ return_date: returnDate, status: 'returned' })
-                .eq('id', recordId)
-                .select()
-                .maybeSingle()
-
-            if (error) throw error
-            if (updatedRecord?.book_id) {
-                const { data: bookRow } = await supabase.from('books').select('*').eq('id', updatedRecord.book_id).maybeSingle()
-                if (bookRow) {
-                    const current = Number(bookRow.available_copies ?? bookRow.available ?? 0)
-                    const next = current + 1
-                    await supabase.from('books').update({ available_copies: next, available: next }).eq('id', bookRow.id)
-                }
-            }
-            return updatedRecord
-        } catch (dbErr: any) {
-            console.debug('[api] custom student-login return failed', dbErr)
-            const { processReturn: mockReturn } = await import('./mockApi')
-            return await mockReturn(recordId, '')
-        }
-    }
+    throw new Error('Returns must be requested by the student and approved by the admin before the book is finalized as returned.')
 }
 
 export async function login(emailOrId: string, password: string, role: UserRole): Promise<AuthSession> {
@@ -451,6 +446,7 @@ export async function login(emailOrId: string, password: string, role: UserRole)
             course: row.course ?? 'Unassigned',
             year_level: row.year_level ?? '1st Year',
             status: row.status ?? 'active',
+            avatar_url: row.avatar_url ?? null,
         }
 
         const loginUser = {
@@ -462,6 +458,21 @@ export async function login(emailOrId: string, password: string, role: UserRole)
             course: row.course,
             year_level: row.year_level,
             status: row.status,
+            avatar_url: row.avatar_url ?? null,
+        }
+
+        // Try to fetch additional profile fields (avatar_url, course, etc.) from the students table
+        try {
+            const { data: studentRow } = await supabase.from('students').select('avatar_url,course,year_level').or(`student_code.eq.${studentCode},id.eq.${studentCode}`).maybeSingle()
+            if (studentRow) {
+                student.avatar_url = studentRow.avatar_url ?? null
+                student.course = studentRow.course ?? student.course
+                student.year_level = studentRow.year_level ?? student.year_level
+                // also attach to loginUser for convenience
+                loginUser.avatar_url = studentRow.avatar_url ?? null
+            }
+        } catch (e) {
+            // ignore
         }
 
         return { user: loginUser as any, student, card: null, loginAccount: row }

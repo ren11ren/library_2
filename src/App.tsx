@@ -240,27 +240,52 @@ function MobileNav({ items, active, onSelect }: { items: { id: string; label: st
 // ─── Data ─────────────────────────────────────────────────────────────────────
 const libraryClassificationCategories = [
   'All',
-  'A - General Works (Encyclopedias, magazines, general periodicals)',
-  'B - Philosophy, Psychology, and Religion',
-  'C - Auxiliary Sciences of History',
-  'D - World History and History of Europe, Asia, and Africa',
-  'E - F - History of the Americas',
-  'G - Geography, Anthropology, and Recreation',
-  'H - Social Sciences (Economics, sociology, statistics)',
+  'Q - Science',
+  'Computer Science',
+  'Database',
   'J - Political Science',
-  'K - Law',
-  'L - Education',
-  'M - Music',
-  'N - Fine Arts (Architecture, painting, design)',
-  'P - Language and Literature',
-  'Q - Science (Mathematics, physics, chemistry, biology)',
-  'R - Medicine and Nursing',
-  'S - Agriculture',
-  'T - Technology and Engineering',
-  'U - Military Science',
-  'V - Naval Science',
-  'Z - Bibliography and Library Science',
+  'Software Engineering',
+  'Mathematics',
+  'History',
+  'Literature',
+  'Arts',
+  'Education',
+  'Law',
+  'Medicine',
+  'Agriculture',
+  'Technology',
+  'General Works',
+  'Philosophy',
+  'Geography',
+  'Social Sciences',
+  'Music',
+  'Fine Arts',
+  'Language and Literature',
+  'Military Science',
+  'Naval Science',
+  'Bibliography',
 ]
+
+function normalizeCategoryName(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+
+  const withoutDetails = raw.replace(/\s*\([^)]*\)\s*$/, '').trim()
+  return withoutDetails || raw
+}
+
+function buildCategoryOptions(books: Array<{ category?: string | null }> = []): string[] {
+  const categorySet = new Set<string>()
+
+  libraryClassificationCategories.forEach((category) => categorySet.add(category))
+
+  books.forEach((book) => {
+    const category = normalizeCategoryName(book?.category)
+    if (category) categorySet.add(category)
+  })
+
+  return Array.from(categorySet)
+}
 
 const PERSISTED_BOOKS_KEY = 'library-books-v1'
 const PERSISTED_STUDENTS_KEY = 'library-students-v1'
@@ -407,6 +432,7 @@ function StatusBadge({ status }: { status: string }) {
     available: { label: 'Available', cls: 'bg-green-100 text-green-700' },
     'due-soon': { label: 'Due Soon', cls: 'bg-orange-100 text-orange-600' },
     overdue: { label: 'Overdue', cls: 'bg-red-100 text-red-600' },
+    'return_requested': { label: 'Pending Approval', cls: 'bg-amber-100 text-amber-700' },
     suspended: { label: 'Suspended', cls: 'bg-red-100 text-red-600' },
     unavailable: { label: 'Unavailable', cls: 'bg-gray-100 text-gray-500' },
   }
@@ -772,7 +798,7 @@ function Td({ children, className = '' }: { children: ReactNode; className?: str
 
 // ─── Student Views ─────────────────────────────────────────────────────────────
 
-async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ book: string; author: string; borrowDate: string; returnDate: string; status: string }>> {
+async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ book: string; author: string; borrowDate: string; returnDate: string; status: string; cover_url?: string | null }>> {
   const resolvedStudentKey = String(studentKey ?? '').trim()
   if (!resolvedStudentKey) return []
 
@@ -935,6 +961,7 @@ function StudentBorrowerCard({ userProfile }: { userProfile?: { name?: string; s
 function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: StudentView) => void; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
   const [rows, setRows] = useState<Array<{ id: string; title: string; author: string; borrowDate: string; dueDate: string; status: string }>>([])
   const [announcements, setAnnouncements] = useState<LibraryAnnouncement[]>([])
+  const [dueReminderOpen, setDueReminderOpen] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -995,8 +1022,15 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
 
   const overdueCount = rows.filter((row) => row.status === 'overdue').length
   const dueSoonCount = rows.filter((row) => row.status === 'due-soon').length
+  const dueReminderBooks = rows.filter((row) => row.status === 'due-soon' || row.status === 'overdue')
   const currentlyBorrowed = rows.length
   const nextDue = [...rows].filter((row) => row.dueDate).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0] ?? null
+
+  useEffect(() => {
+    if (dueReminderBooks.length > 0) {
+      setDueReminderOpen(true)
+    }
+  }, [dueReminderBooks.length])
 
   const fines = rows.reduce((sum, row) => {
     if (row.status !== 'overdue' || !row.dueDate) return sum
@@ -1007,6 +1041,43 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
 
   return (
     <div>
+      {dueReminderOpen && dueReminderBooks.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-lg rounded-2xl border border-amber-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-amber-700">
+                  <Icons.AlertCircle />
+                  <span className="text-lg font-bold">Due Date Reminder</span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">Some of your borrowed books are due soon or already overdue.</p>
+              </div>
+              <button type="button" onClick={() => setDueReminderOpen(false)} className="rounded-full border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50">Close</button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {dueReminderBooks.map((book) => (
+                <div key={book.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">{book.title}</div>
+                    <div className="text-xs text-slate-500">Due: {book.dueDate || 'N/A'}</div>
+                  </div>
+                  <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${book.status === 'overdue' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                    {book.status === 'overdue' ? 'Overdue' : 'Due Soon'}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={() => setDueReminderOpen(false)} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                I understand
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h2 className="text-xl font-bold text-green-900">Welcome back!</h2>
@@ -1048,7 +1119,7 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
             {rows.length === 0 ? (
               <div className="rounded-lg border border-dashed border-green-200 bg-green-50 p-5 text-sm text-gray-500">No active loans yet.</div>
             ) : (
-              <Table headers={["Cover", "Book Title", "Due Date", "Status", "Action"]}>
+              <Table headers={["Cover", "Book Title", "Due Date", "Status"]}>
                 {rows.map((b) => (
                   <Tr key={b.id}>
                     <Td className="w-20">
@@ -1062,9 +1133,6 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
                     <Td className="font-medium text-gray-900">{b.title}</Td>
                     <Td className={b.status === 'overdue' ? 'text-red-600 font-medium' : b.status === 'due-soon' ? 'text-orange-500 font-medium' : ''}>{b.dueDate || 'N/A'}</Td>
                     <Td><StatusBadge status={b.status} /></Td>
-                    <Td>
-                      <button onClick={() => onNavigate('borrower-card')} className="px-3 py-1.5 border border-green-200 text-green-700 text-xs font-medium rounded-lg hover:bg-green-50 transition-colors">View Card</button>
-                    </Td>
                   </Tr>
                 ))}
               </Table>
@@ -1099,7 +1167,6 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
             <h4 className="text-sm font-semibold text-green-900">Quick Actions</h4>
             <div className="mt-3 flex flex-col gap-3">
               <button onClick={() => onNavigate('search')} className="py-2.5 bg-green-600 text-white rounded-lg">Search & Borrow Books</button>
-              <button onClick={() => onNavigate('borrower-card')} className="py-2.5 border border-green-200 text-green-700 rounded-lg">View Borrower Card</button>
               <button onClick={() => onNavigate('card')} className="py-2.5 border border-green-200 text-green-700 rounded-lg">My Library Card</button>
             </div>
           </div>
@@ -1632,7 +1699,7 @@ function MyBorrowedBooks({ userProfile }: { userProfile?: { name?: string; stude
 }
 
 function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
-  const [historyRows, setHistoryRows] = useState<Array<{ title: string; author: string; borrowDate: string; returnDate: string; status: string }>>([])
+  const [historyRows, setHistoryRows] = useState<Array<{ title: string; author: string; borrowDate: string; returnDate: string; status: string; cover_url?: string | null }>>([])
 
   useEffect(() => {
     const studentKey = String(userProfile?.studentId ?? userProfile?.studentCode ?? userProfile?.email ?? '').trim()
@@ -1645,6 +1712,7 @@ function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; stud
         borrowDate: entry.borrowDate,
         returnDate: entry.returnDate,
         status: entry.status,
+        cover_url: entry.cover_url ?? null,
       })))
     }
 
@@ -1664,9 +1732,9 @@ function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; stud
           {historyRows.map((b, i) => (
             <Tr key={`${b.title}-${b.borrowDate}-${i}`}>
               <Td className="w-20">
-                {((b as any).cover_url) ? (
+                {b.cover_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={String((b as any).cover_url)} alt={b.title} className="w-12 h-16 object-cover rounded" />
+                  <img src={String(b.cover_url)} alt={b.title} className="w-12 h-16 object-cover rounded" />
                 ) : (
                   <div className="w-12 h-16 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-600">No cover</div>
                 )}
@@ -1684,12 +1752,13 @@ function BorrowingHistory({ userProfile }: { userProfile?: { name?: string; stud
   )
 }
 
-function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string; avatar_url?: string | null } }) {
   const student = {
     name: userProfile?.name ?? 'Juan Dela Cruz',
     id: userProfile?.studentId ?? userProfile?.studentCode ?? 'N/A',
     course: userProfile?.course ?? 'BSCS 3',
     cardNo: userProfile?.card ?? 'N/A',
+    avatar_url: userProfile?.avatar_url ?? null,
   }
 
   function handleDownloadCard() {
@@ -1754,7 +1823,13 @@ function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId
 
           <div className="main">
             <div className="title">LIBRARY CARD</div>
-            <div className="photo-box">PHOTO</div>
+            <div className="photo-box">
+              {student.avatar_url ? (
+                <img src={student.avatar_url} alt="Profile" className="h-full w-full object-cover" />
+              ) : (
+                <span>PHOTO</span>
+              )}
+            </div>
             <div className="information">
               <div className="field">
                 <div className="label">Name:</div>
@@ -1795,7 +1870,7 @@ function LibraryCard({ userProfile }: { userProfile?: { name?: string; studentId
   )
 }
 
-function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+function Profile({ userProfile, onProfileSave }: { userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string; program?: string; yearLevel?: string; membershipStatus?: string; borrowedBooks?: number; activeHolds?: number; finesDue?: number; avatar_url?: string | null }; onProfileSave?: (nextProfile: any) => void }) {
   const defaults = {
     name: 'Student',
     studentId: 'STU-2024-118',
@@ -1804,23 +1879,115 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
     program: 'Computer Science',
     yearLevel: '2nd Year',
     card: 'LIB-284920',
-    borrowedBooks: 4,
-    activeHolds: 2,
-    finesDue: 28,
+    borrowedBooks: 0,
+    activeHolds: 0,
+    finesDue: 0,
     membershipStatus: 'Active',
+    avatar_url: null,
   }
 
   const [profile, setProfile] = useState({ ...defaults, ...(userProfile ?? {}) })
+  const [originalProfile, setOriginalProfile] = useState({ ...defaults, ...(userProfile ?? {}) })
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({})
+  const [avatarPreview, setAvatarPreview] = useState<string | null>((userProfile as any)?.avatar_url ?? null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   useEffect(() => {
-    setProfile((current) => ({ ...defaults, ...userProfile, ...current, ...((userProfile ?? {}) as any) }))
+    let ignore = false
+
+    async function loadProfileFromSupabase() {
+      try {
+        const localAuthRaw = window.localStorage.getItem('lms-auth')
+        const localAuth = localAuthRaw ? JSON.parse(localAuthRaw) : null
+        const lookupCode = String(userProfile?.studentCode ?? userProfile?.studentId ?? localAuth?.studentCode ?? localAuth?.studentId ?? localAuth?.email ?? '').trim()
+        const lookupId = String(localAuth?.studentId ?? userProfile?.studentId ?? '').trim()
+
+        const loginLookup = lookupCode || lookupId
+        const fallback = { ...defaults, ...(userProfile ?? {}) }
+
+        if (!loginLookup) {
+          if (!ignore) {
+            setProfile(fallback)
+            setOriginalProfile(fallback)
+            setAvatarPreview(fallback.avatar_url ?? null)
+          }
+          return
+        }
+
+        let loginRow: any = null
+        if (lookupCode || lookupId) {
+          const { data, error } = await supabase
+            .from('student_login_accounts')
+            .select('*')
+            .or(`student_code.eq.${lookupCode},student_id.eq.${lookupCode},student_id.eq.${lookupId}`)
+            .limit(1)
+
+          if (!error && Array.isArray(data) && data.length > 0) {
+            loginRow = data[0]
+          }
+        }
+
+        let studentRow: any = null
+        const studentCode = String(loginRow?.student_code ?? userProfile?.studentCode ?? localAuth?.studentCode ?? '').trim()
+        if (studentCode) {
+          const { data, error } = await supabase
+            .from('students')
+            .select('*')
+            .eq('student_code', studentCode)
+            .maybeSingle()
+
+          if (!error) {
+            studentRow = data
+          }
+        }
+
+        const nextProfile = {
+          ...defaults,
+          ...(userProfile ?? {}),
+          name: String(studentRow?.name ?? loginRow?.full_name ?? userProfile?.name ?? localAuth?.name ?? defaults.name).trim() || defaults.name,
+          studentId: String(studentRow?.student_code ?? loginRow?.student_code ?? loginRow?.student_id ?? userProfile?.studentId ?? userProfile?.studentCode ?? localAuth?.studentCode ?? defaults.studentId).trim() || defaults.studentId,
+          email: String(studentRow?.email ?? loginRow?.email ?? userProfile?.email ?? localAuth?.email ?? defaults.email).trim() || defaults.email,
+          course: String(studentRow?.course ?? loginRow?.course ?? userProfile?.course ?? localAuth?.course ?? defaults.course).trim() || defaults.course,
+          program: String(studentRow?.course ?? loginRow?.course ?? userProfile?.program ?? userProfile?.course ?? localAuth?.course ?? defaults.program).trim() || defaults.program,
+          yearLevel: String(studentRow?.year_level ?? loginRow?.year_level ?? userProfile?.yearLevel ?? localAuth?.yearLevel ?? defaults.yearLevel).trim() || defaults.yearLevel,
+          card: String(userProfile?.card ?? localAuth?.card ?? defaults.card).trim() || defaults.card,
+          borrowedBooks: Number(userProfile?.borrowedBooks ?? localAuth?.borrowedBooks ?? defaults.borrowedBooks) || 0,
+          activeHolds: Number(userProfile?.activeHolds ?? localAuth?.activeHolds ?? defaults.activeHolds) || 0,
+          finesDue: Number(userProfile?.finesDue ?? localAuth?.finesDue ?? defaults.finesDue) || 0,
+          membershipStatus: String(localAuth?.membershipStatus ?? defaults.membershipStatus).trim() || defaults.membershipStatus,
+          avatar_url: studentRow?.avatar_url ?? loginRow?.avatar_url ?? userProfile?.avatar_url ?? localAuth?.avatar_url ?? null,
+        }
+
+        if (!ignore) {
+          setProfile(nextProfile)
+          setOriginalProfile(nextProfile)
+          setAvatarPreview(nextProfile.avatar_url ?? null)
+        }
+      } catch (error: any) {
+        console.error('Unable to load profile data from Supabase', error)
+        if (!ignore) {
+          const fallback = { ...defaults, ...(userProfile ?? {}) }
+          setProfile(fallback)
+          setOriginalProfile(fallback)
+          setAvatarPreview(fallback.avatar_url ?? null)
+          setSaveError(error?.message || 'Unable to load profile data.')
+        }
+      }
+    }
+
+    void loadProfileFromSupabase()
+    return () => { ignore = true }
   }, [userProfile])
 
   function handleFieldChange(field: 'name' | 'email' | 'program' | 'yearLevel', value: string) {
     setProfile((current) => ({ ...current, [field]: value }))
     setSaveMessage(null)
+    setSaveError(null)
     setFieldErrors((current) => ({ ...current, [field]: undefined }))
   }
 
@@ -1841,15 +2008,127 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
     return Object.keys(nextErrors).length === 0
   }
 
-  function handleSaveProfile() {
+  async function handleSaveProfile() {
     if (!validateProfile()) return
-    setSaveMessage('Profile updated successfully.')
+
+    setSaveError(null)
+    setSaveMessage(null)
+    setSaveState('saving')
+    setIsSavingProfile(true)
+
+    try {
+      setUploadingAvatar(true)
+
+      const rawLocalAuth = window.localStorage.getItem('lms-auth')
+      const localAuth = rawLocalAuth ? JSON.parse(rawLocalAuth) : null
+      const candidateStudentCode = String(profile.studentId || userProfile?.studentCode || localAuth?.studentCode || '').trim()
+      const candidateStudentId = String(localAuth?.studentId || userProfile?.studentId || '').trim()
+
+      if (!candidateStudentCode && !candidateStudentId) {
+        setSaveError('No student record is available to update. Please log in again.')
+        setSaveState('idle')
+        return
+      }
+
+      let avatarUrl = profile.avatar_url ?? null
+      const isRemoteAvatar = typeof avatarPreview === 'string' && /^(https?:\/\/)/.test(avatarPreview)
+      if (avatarFile) {
+        const nextDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result ?? ''))
+          reader.onerror = () => reject(new Error('Unable to read the selected image.'))
+          reader.readAsDataURL(avatarFile)
+        })
+
+        avatarUrl = nextDataUrl
+        setAvatarPreview(nextDataUrl)
+        setAvatarFile(null)
+      } else if (isRemoteAvatar) {
+        avatarUrl = avatarPreview
+      } else {
+        avatarUrl = profile.avatar_url ?? null
+      }
+
+      const loginUpdatePayload = {
+        full_name: profile.name.trim(),
+        course: String(profile.program || profile.course || '').trim() || 'Unassigned',
+        year_level: String(profile.yearLevel || '').trim() || '1st Year',
+        avatar_url: avatarUrl,
+        updated_at: new Date().toISOString(),
+      }
+
+      if (candidateStudentCode) {
+        const { error: loginError } = await supabase
+          .from('student_login_accounts')
+          .update(loginUpdatePayload)
+          .eq('student_code', candidateStudentCode)
+
+        if (loginError) {
+          console.warn('Unable to update student_login_accounts', loginError)
+        }
+      }
+
+      const studentUpdatePayload = {
+        name: profile.name.trim(),
+        email: profile.email.trim(),
+        course: String(profile.program || profile.course || '').trim() || null,
+        year_level: String(profile.yearLevel || '').trim() || null,
+        avatar_url: avatarUrl,
+      }
+
+      if (candidateStudentCode) {
+        const { error: studentUpdateError } = await supabase
+          .from('students')
+          .update(studentUpdatePayload)
+          .eq('student_code', candidateStudentCode)
+
+        if (studentUpdateError) {
+          console.warn('Unable to update students table', studentUpdateError)
+        }
+      }
+
+      if (candidateStudentId) {
+        const { error: studentIdUpdateError } = await supabase
+          .from('students')
+          .update(studentUpdatePayload)
+          .eq('id', candidateStudentId)
+
+        if (studentIdUpdateError) {
+          console.warn('Unable to update students by id', studentIdUpdateError)
+        }
+      }
+
+      const nextProfile = {
+        ...profile,
+        course: profile.program || profile.course,
+        program: profile.program || profile.course,
+        avatar_url: avatarUrl,
+      }
+
+      onProfileSave?.(nextProfile)
+      setProfile(nextProfile)
+      setOriginalProfile(nextProfile)
+      setAvatarPreview(avatarUrl)
+      setSaveMessage('Profile updated successfully.')
+      setSaveState('saved')
+    } catch (error: any) {
+      console.error('Profile update failed', error)
+      setSaveError(error?.message || 'Unable to save profile changes.')
+      setSaveState('idle')
+    } finally {
+      setUploadingAvatar(false)
+      setIsSavingProfile(false)
+    }
   }
 
   function handleReset() {
-    setProfile({ ...defaults, ...(userProfile ?? {}) })
+    setProfile({ ...originalProfile })
+    setAvatarPreview(originalProfile.avatar_url ?? null)
+    setAvatarFile(null)
     setFieldErrors({})
     setSaveMessage(null)
+    setSaveError(null)
+    setSaveState('idle')
   }
 
   async function copyValue(value: string) {
@@ -1857,8 +2136,10 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
     try {
       await navigator.clipboard.writeText(value)
       setSaveMessage('Copied to clipboard.')
+      setSaveError(null)
     } catch {
       setSaveMessage('Copy failed. Please try again.')
+      setSaveError(null)
     }
   }
 
@@ -1878,9 +2159,14 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
           <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
               <div className="group relative h-20 w-20 shrink-0">
-                <div className="flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-700 text-2xl font-bold text-white shadow-md">
-                  {initials}
-                </div>
+                {avatarPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarPreview} alt="Avatar" className="h-full w-full rounded-2xl object-cover shadow-md" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-700 text-2xl font-bold text-white shadow-md">
+                    {initials}
+                  </div>
+                )}
                 <label className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900/55 opacity-0 transition group-hover:opacity-100">
                   <div className="flex flex-col items-center gap-1 text-[10px] font-medium uppercase tracking-[0.16em] text-white">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
@@ -1889,8 +2175,18 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
                     </svg>
                     Upload
                   </div>
-                  <input type="file" className="hidden" />
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null
+                    if (!f) return
+                    setAvatarFile(f)
+                    const reader = new FileReader()
+                    reader.onload = () => setAvatarPreview(String(reader.result))
+                    reader.readAsDataURL(f)
+                  }} />
                 </label>
+                {avatarPreview && (
+                  <button type="button" onClick={() => { setAvatarFile(null); setAvatarPreview(null); setProfile((c) => ({ ...c, avatar_url: undefined })) }} className="absolute -right-2 -bottom-2 rounded-full bg-white p-1 text-xs shadow">Remove</button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -2005,7 +2301,9 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button type="button" onClick={handleReset} className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Cancel</button>
-              <button type="button" onClick={handleSaveProfile} className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-3 focus:ring-emerald-200">Save Changes</button>
+              <button type="button" onClick={handleSaveProfile} disabled={isSavingProfile || uploadingAvatar} className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-3 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-70">
+                {isSavingProfile ? 'Saving...' : saveState === 'saved' ? 'Saved' : 'Save Changes'}
+              </button>
             </div>
 
             {saveMessage && (
@@ -2013,31 +2311,37 @@ function Profile({ userProfile }: { userProfile?: { name?: string; studentId?: s
                 {saveMessage}
               </div>
             )}
+
+            {saveError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
           </div>
 
-          <aside className="space-y-4">
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+          <aside className="space-y-3">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Membership</div>
               <div className="mt-3 inline-flex items-center rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
                 Active / Verified Student
               </div>
-              <div className="mt-3 text-sm text-emerald-900">No overdue fines and borrowing privileges are enabled.</div>
+              <div className="mt-3 text-sm leading-6 text-emerald-900">No overdue fines and borrowing privileges are enabled.</div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Borrowed Books</div>
-                <div className="mt-3 text-3xl font-bold text-slate-900">{profile.borrowedBooks}</div>
+                <div className="mt-3 text-4xl font-black leading-none text-slate-900">{profile.borrowedBooks}</div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Active Holds</div>
-                <div className="mt-3 text-3xl font-bold text-slate-900">{profile.activeHolds}</div>
+                <div className="mt-3 text-4xl font-black leading-none text-slate-900">{profile.activeHolds}</div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Fines Due</div>
-                <div className="mt-3 text-3xl font-bold text-red-600">₱{Number(profile.finesDue).toFixed(2)}</div>
+                <div className="mt-3 text-4xl font-black leading-none text-red-600">₱{Number(profile.finesDue).toFixed(2)}</div>
               </div>
             </div>
           </aside>
@@ -2053,6 +2357,9 @@ function AdminBooks() {
   const { data: booksRt } = useSupabaseRealtime('books')
   const [books, setBooks] = useState(() => readPersistedState(PERSISTED_BOOKS_KEY, adminBooks))
   const dbInitialized = useRef(false)
+  const categoryOptions = buildCategoryOptions(books)
+  const defaultCategory = libraryClassificationCategories.find((category) => category !== 'All') ?? 'Uncategorized'
+  const selectedCategoryValue = categoryOptions.includes('Q - Science') ? 'Q - Science' : categoryOptions.find((category) => category !== 'All') ?? 'Uncategorized'
 
   const { data: borrowingRt } = useSupabaseRealtime('borrowing_records')
 
@@ -2087,6 +2394,7 @@ function AdminBooks() {
   const [categoryFilter, setCategoryFilter] = useState('All')
   const [showForm, setShowForm] = useState(false)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverFileName, setCoverFileName] = useState('No file chosen')
   const [form, setForm] = useState({
     book_code: '',
@@ -2094,7 +2402,7 @@ function AdminBooks() {
     author: '',
     isbn: '',
     published_year: '2024',
-    category: 'Q - Science (Mathematics, physics, chemistry, biology)',
+    category: selectedCategoryValue,
     publisher: '',
     price: '0.00',
     copies: '1',
@@ -2104,23 +2412,33 @@ function AdminBooks() {
   })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<typeof adminBooks[number] | null>(null)
+  const [historyBook, setHistoryBook] = useState<typeof adminBooks[number] | null>(null)
+  const [historyRows, setHistoryRows] = useState<any[]>([])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   const filtered = books.filter((b) => {
     const matchQuery = !query || b.title.toLowerCase().includes(query.toLowerCase()) || b.author.toLowerCase().includes(query.toLowerCase())
-    const matchCategory = categoryFilter === 'All' || b.category === categoryFilter
+    const normalizedBookCategory = normalizeCategoryName(b.category)
+    const normalizedFilterCategory = normalizeCategoryName(categoryFilter)
+    const matchCategory = categoryFilter === 'All'
+      || normalizedBookCategory === normalizedFilterCategory
+      || (!normalizedBookCategory && normalizedFilterCategory === 'Uncategorized')
+      || (normalizedBookCategory && normalizedFilterCategory && normalizedBookCategory.toLowerCase().includes(normalizedFilterCategory.toLowerCase()))
     return matchQuery && matchCategory
   })
 
   function handleCoverUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) {
+      setCoverFile(null)
       setCoverPreview(null)
       setCoverFileName('No file chosen')
       setForm((current) => ({ ...current, cover_url: '' }))
       return
     }
+
+    setCoverFile(file)
 
     const reader = new FileReader()
     reader.onload = () => {
@@ -2139,7 +2457,7 @@ function AdminBooks() {
       author: '',
       isbn: '',
       published_year: '2024',
-      category: 'Q - Science (Mathematics, physics, chemistry, biology)',
+      category: defaultCategory,
       publisher: '',
       price: '0.00',
       copies: '1',
@@ -2148,6 +2466,7 @@ function AdminBooks() {
       cover_url: '',
     })
     setCoverPreview(null)
+    setCoverFile(null)
     setCoverFileName('No file chosen')
     setEditingId(null)
     setShowForm(false)
@@ -2161,6 +2480,8 @@ function AdminBooks() {
 
   function startEditBook(book: typeof adminBooks[number]) {
     const coverUrl = (book as any).cover_url || null
+    const selectedBookCategory = normalizeCategoryName(book.category)
+    const nextCategory = categoryOptions.includes(selectedBookCategory) ? selectedBookCategory : defaultCategory
     setEditingId(book.id)
     setForm({
       book_code: book.id,
@@ -2168,7 +2489,7 @@ function AdminBooks() {
       author: book.author,
       isbn: book.isbn || '',
       published_year: '2024',
-      category: book.category,
+      category: nextCategory,
       publisher: book.publisher || '',
       price: '0.00',
       copies: String(book.copies),
@@ -2176,6 +2497,7 @@ function AdminBooks() {
       lost: '0',
       cover_url: coverUrl || '',
     })
+    setCoverFile(null)
     setCoverPreview(coverUrl)
     setCoverFileName(coverUrl ? 'Uploaded cover' : 'No file chosen')
     setShowForm(true)
@@ -2198,6 +2520,8 @@ function AdminBooks() {
       // optimistic create for books: add temp row so UI doesn't lose entry
       tempId = `tmp-book-${Date.now()}`
 
+      const coverUrl = (form.cover_url || '').trim()
+
       const payload = {
         book_code: form.book_code.trim() || `BK-${Date.now()}`,
         title,
@@ -2211,7 +2535,7 @@ function AdminBooks() {
         price: Number(form.price) || 0,
         damaged: Number(form.damaged) || 0,
         lost: Number(form.lost) || 0,
-        cover_url: form.cover_url || null,
+        cover_url: coverUrl || null,
       }
       // add optimistic temp item
       const tempItem: any = {
@@ -2273,6 +2597,60 @@ function AdminBooks() {
       setDeleteTarget(null)
     }
   }
+
+  useEffect(() => {
+    if (!historyBook) {
+      setHistoryRows([])
+      return
+    }
+
+    async function loadHistory() {
+      try {
+        const [{ data: loginRows }, { data: studentRows }] = await Promise.all([
+          supabase.from('student_login_accounts').select('id, student_id, student_code, full_name').limit(200),
+          supabase.from('students').select('id, student_code, name').limit(200),
+        ])
+
+        const nameMap = new Map<string, string>()
+        for (const row of [...(loginRows ?? []), ...(studentRows ?? [])]) {
+          const rowName = row?.full_name ?? row?.name
+          if (!rowName) continue
+          for (const key of [row?.id, row?.student_id, row?.student_code]) {
+            const normalized = String(key ?? '').trim()
+            if (normalized) nameMap.set(normalized, String(rowName))
+          }
+        }
+
+        const { data, error } = await supabase
+          .from('borrowing_records')
+          .select('*')
+          .eq('book_id', historyBook.id)
+          .order('borrow_date', { ascending: false })
+
+        if (error) throw error
+
+        setHistoryRows((data ?? []).map((row: any) => {
+          const studentId = String(row.student_id ?? '').trim()
+          const studentName = nameMap.get(studentId) ?? 'Unknown student'
+
+          return {
+            id: row.id,
+            studentId,
+            studentName,
+            borrowDate: row.borrow_date ?? 'N/A',
+            dueDate: row.due_date ?? 'N/A',
+            returnDate: row.return_date ?? '—',
+            status: String(row.status ?? 'borrowed').replace(/_/g, ' '),
+          }
+        }))
+      } catch (err) {
+        console.error('[AdminBooks] unable to load borrowing history', err)
+        setHistoryRows([])
+      }
+    }
+
+    void loadHistory()
+  }, [historyBook])
 
   return (
     <div>
@@ -2355,9 +2733,13 @@ function AdminBooks() {
 
                     <div>
                       <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Category <span className="text-red-500">*</span></label>
-                      <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100">
-                        {libraryClassificationCategories.filter((category) => category !== 'All').map((category) => (
-                          <option key={category}>{category}</option>
+                      <select
+                        value={categoryOptions.includes(form.category) ? form.category : defaultCategory}
+                        onChange={(e) => setForm({ ...form, category: e.target.value })}
+                        className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                      >
+                        {categoryOptions.filter((category) => category !== 'All').map((category) => (
+                          <option key={category} value={category}>{category}</option>
                         ))}
                       </select>
                     </div>
@@ -2425,7 +2807,7 @@ function AdminBooks() {
             onChange={(e) => setCategoryFilter(e.target.value)}
             className="w-full md:min-w-[220px] py-2.5 px-3 rounded-lg border border-green-200 bg-white text-sm focus:outline-none focus:border-green-500 transition"
           >
-            {libraryClassificationCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+            {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
           </select>
         </div>
         <button onClick={openCreateForm} className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors">
@@ -2458,7 +2840,13 @@ function AdminBooks() {
               <div className="flex-1">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-900 truncate">{b.title}</div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setHistoryBook(b) }}
+                      className="font-medium text-gray-900 underline-offset-2 hover:text-green-700 hover:underline"
+                    >
+                      <span className="truncate block">{b.title}</span>
+                    </button>
                     <div className="text-xs text-gray-600">{b.author}</div>
                   </div>
                   <div className="text-right">
@@ -2514,7 +2902,13 @@ function AdminBooks() {
                       </div>
                     )}
                     <div>
-                      <div className="font-medium text-gray-900">{b.title}</div>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setHistoryBook(b) }}
+                        className="font-medium text-gray-900 underline-offset-2 hover:text-green-700 hover:underline"
+                      >
+                        {b.title}
+                      </button>
                     </div>
                   </div>
                 </td>
@@ -2534,6 +2928,7 @@ function AdminBooks() {
                 <td className="px-4 py-3 text-gray-500">{b.updatedOn}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); setHistoryBook(b) }} className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700 transition hover:bg-green-100">History</button>
                     <button onClick={(e) => { e.stopPropagation(); startEditBook(b) }} className="rounded-lg bg-orange-400 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-500">Edit</button>
                     <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(b) }} className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600">Delete</button>
                   </div>
@@ -2552,6 +2947,59 @@ function AdminBooks() {
           <button className="rounded border border-gray-200 bg-white px-3 py-1.5 text-gray-500 hover:bg-gray-50">Next</button>
         </div>
       </div>
+
+      {historyBook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-green-100 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{historyBook.title}</h3>
+                <p className="text-xs text-gray-500">Borrowing history</p>
+              </div>
+              <button onClick={() => setHistoryBook(null)} className="text-gray-400 hover:text-gray-700"><Icons.X /></button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto p-4">
+              {historyRows.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-green-200 bg-green-50 p-4 text-sm text-gray-600">No borrowing history has been recorded for this book yet.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="bg-green-50 text-left text-xs font-semibold uppercase tracking-wide text-green-800">
+                        <th className="px-3 py-2">Student</th>
+                        <th className="px-3 py-2">Borrowed</th>
+                        <th className="px-3 py-2">Due</th>
+                        <th className="px-3 py-2">Returned</th>
+                        <th className="px-3 py-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {historyRows.map((row) => (
+                        <tr key={row.id} className="align-top">
+                          <td className="px-3 py-2 text-sm font-medium text-gray-700">{row.studentName || 'Unknown student'}</td>
+                          <td className="px-3 py-2 text-gray-700">{row.borrowDate}</td>
+                          <td className="px-3 py-2 text-gray-700">{row.dueDate}</td>
+                          <td className="px-3 py-2 text-gray-700">{row.returnDate}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${row.status.toLowerCase() === 'returned' ? 'bg-green-100 text-green-700' : row.status.toLowerCase() === 'borrowed' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end border-t border-gray-200 px-5 py-3">
+              <button onClick={() => setHistoryBook(null)} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
@@ -2870,6 +3318,7 @@ function AdminUsers() {
           course: u.course ?? '',
           yearLevel: u.year_level ?? '',
           status: u.status ?? 'active',
+          avatarUrl: u.avatar_url ?? null,
         }))
 
         setUsers(mapped)
@@ -2895,6 +3344,7 @@ function AdminUsers() {
       course: u.course ?? '',
       yearLevel: u.yearLevel ?? '',
       status: u.status ?? 'active',
+      avatarUrl: u.avatarUrl ?? u.avatar_url ?? null,
     }))
 
     setUsers(mapped)
@@ -2934,27 +3384,45 @@ function AdminUsers() {
       <PageHeader title="Users" subtitle="Student login accounts (student_login_accounts table)" />
       {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
       <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
-        <Table headers={["Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Status", "Action"]}>
-          {users.map((u: any) => (
-            <Tr key={u.id}>
-              <Td className="font-mono text-xs">{u.id}</Td>
-              <Td>{u.fullName || '—'}</Td>
-              <Td className="font-mono text-xs">{u.studentId ?? 'NULL'}</Td>
-              <Td className="font-mono text-xs">{u.studentCode ? (studentMap[u.studentCode] ?? u.studentCode) : 'NULL'}</Td>
-              <Td>{u.course || '—'}</Td>
-              <Td>{u.yearLevel || '—'}</Td>
-              <Td><StatusBadge status={u.status || 'active'} /></Td>
-              <Td>
-                <button
-                  onClick={() => handleToggleStatus(u)}
-                  disabled={updatingId === u.id}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${u.status === 'suspended' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} disabled:cursor-not-allowed disabled:opacity-60`}
-                >
-                  {updatingId === u.id ? 'Updating...' : u.status === 'suspended' ? 'Activate' : 'Deactivate'}
-                </button>
-              </Td>
-            </Tr>
-          ))}
+        <Table headers={["Photo", "Row ID", "Full Name", "Student ID", "Student Code", "Course", "Year Level", "Status", "Action"]}>
+          {users.map((u: any) => {
+            const initials = (u.fullName || 'ST')
+              .split(/\s+/)
+              .filter(Boolean)
+              .slice(0, 2)
+              .map((part: string) => part[0]?.toUpperCase() ?? '')
+              .join('') || 'ST'
+
+            return (
+              <Tr key={u.id}>
+                <Td>
+                  {u.avatarUrl ? (
+                    <img src={u.avatarUrl} alt={u.fullName || 'Student'} className="h-10 w-10 rounded-full object-cover border border-green-100 shadow-sm" />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-green-700 text-xs font-bold text-white shadow-sm">
+                      {initials}
+                    </div>
+                  )}
+                </Td>
+                <Td className="font-mono text-xs">{u.id}</Td>
+                <Td>{u.fullName || '—'}</Td>
+                <Td className="font-mono text-xs">{u.studentId ?? 'NULL'}</Td>
+                <Td className="font-mono text-xs">{u.studentCode ? (studentMap[u.studentCode] ?? u.studentCode) : 'NULL'}</Td>
+                <Td>{u.course || '—'}</Td>
+                <Td>{u.yearLevel || '—'}</Td>
+                <Td><StatusBadge status={u.status || 'active'} /></Td>
+                <Td>
+                  <button
+                    onClick={() => handleToggleStatus(u)}
+                    disabled={updatingId === u.id}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition ${u.status === 'suspended' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {updatingId === u.id ? 'Updating...' : u.status === 'suspended' ? 'Activate' : 'Deactivate'}
+                  </button>
+                </Td>
+              </Tr>
+            )
+          })}
         </Table>
       </div>
     </div>
@@ -3099,7 +3567,7 @@ function AdminReturns() {
   }, [])
 
   const activeReturns = (borrowRows ?? [])
-    .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested' || (!record.return_date && !(record.status ?? '').toLowerCase().includes('returned')))
+    .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested')
     .map((record: any) => {
       const recordStudentId = String(record?.studentId ?? record?.student_id ?? '').trim()
       const student = (loginRows ?? []).find((item: any) => {
@@ -3124,8 +3592,6 @@ function AdminReturns() {
         status: String(record?.status ?? '').toLowerCase(),
       }
     })
-
-  const otherActiveReturns = activeReturns.filter((r: any) => r.status !== 'return_requested')
 
   const returnRequests = (borrowRows ?? [])
     .filter((record: any) => String(record?.status ?? '').toLowerCase() === 'return_requested')
@@ -3213,15 +3679,120 @@ function AdminReturns() {
   )
 }
 
+function buildReminderMailtoLink(email: string, studentName: string, bookTitle: string, dueDate: string, daysOverdue: number) {
+  const subject = 'Library due date reminder'
+  const body = [
+    `Dear ${studentName},`,
+    '',
+    'This is a reminder that your borrowed book is now overdue.',
+    `Book: ${bookTitle}`,
+    `Due date: ${dueDate}`,
+    `Days overdue: ${daysOverdue}`,
+    '',
+    'Please return the book to the library as soon as possible or contact the library staff for assistance.',
+    '',
+    'Thank you,',
+    'Library Management Office',
+  ].join('\n')
+
+  return `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+}
+
 function AdminOverdueBooks() {
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [remindingId, setRemindingId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
+  useEffect(() => {
+    let ignore = false
+
+    async function loadOverdueRows() {
+      try {
+        const [{ data: loanRows, error: loanError }, { data: bookRows, error: bookError }, { data: loginRows, error: loginError }, { data: studentRows, error: studentError }] = await Promise.all([
+          supabase.from('borrowing_records').select('*').order('due_date', { ascending: true }).limit(200),
+          supabase.from('books').select('*').limit(200),
+          supabase.from('student_login_accounts').select('*').limit(200),
+          supabase.from('students').select('*').limit(200),
+        ])
+
+        if (loanError || bookError || loginError || studentError) {
+          throw new Error('Unable to load overdue records.')
+        }
+
+        const bookMap = new Map((bookRows ?? []).map((book: any) => [String(book.id ?? '').trim(), book]))
+        const nameMap = new Map<string, string>()
+        const emailMap = new Map<string, string>()
+
+        for (const row of [...(loginRows ?? []), ...(studentRows ?? [])]) {
+          const name = String(row?.full_name ?? row?.name ?? '').trim()
+          const email = String(row?.email ?? '').trim()
+          if (name) {
+            for (const key of [row?.id, row?.student_id, row?.student_code]) {
+              const normalized = String(key ?? '').trim()
+              if (normalized) nameMap.set(normalized, name)
+            }
+          }
+          if (email) {
+            for (const key of [row?.id, row?.student_id, row?.student_code]) {
+              const normalized = String(key ?? '').trim()
+              if (normalized) emailMap.set(normalized, email)
+            }
+          }
+        }
+
+        const now = new Date()
+        const overdue = (loanRows ?? []).filter((row: any) => {
+          const hasNoReturn = !row?.return_date
+          const dueDate = row?.due_date ? new Date(row.due_date) : null
+          const isPastDue = !!dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < now
+          return hasNoReturn && isPastDue
+        }).map((row: any) => {
+          const studentId = String(row?.student_id ?? '').trim()
+          const book = bookMap.get(String(row?.book_id ?? '').trim())
+          const dueDate = row?.due_date ? new Date(row.due_date) : null
+          const daysOverdue = dueDate ? Math.max(0, Math.ceil((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24))) : 0
+
+          return {
+            id: row?.id ?? `overdue-${Math.random()}`,
+            student: nameMap.get(studentId) || nameMap.get(String(row?.student_id ?? '')) || 'Unknown student',
+            email: emailMap.get(studentId) || emailMap.get(String(row?.student_id ?? '')) || 'N/A',
+            book: book?.title ?? 'Unknown book',
+            due: row?.due_date ? new Date(row.due_date).toISOString().slice(0, 10) : 'N/A',
+            daysOverdue,
+            notified: Boolean(row?.notified),
+          }
+        })
+
+        if (!ignore) setRows(overdue)
+      } catch (error) {
+        console.error('[AdminOverdueBooks] unable to load overdue rows', error)
+        if (!ignore) setRows([])
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+
+    void loadOverdueRows()
+    return () => { ignore = true }
+  }, [])
+
   async function handleSendReminder(recordId: string) {
+    const row = rows.find((item) => String(item.id) === String(recordId))
+    const email = String(row?.email ?? '').trim()
+
+    if (!email || email === 'N/A') {
+      setMessage('This student does not have a valid email address on file.')
+      return
+    }
+
     try {
       setRemindingId(recordId)
+      const mailtoLink = buildReminderMailtoLink(email, row?.student ?? 'Student', row?.book ?? 'Book', row?.due ?? 'N/A', Number(row?.daysOverdue ?? 0))
+      window.location.href = mailtoLink
       await markReminderSent(recordId)
-      setMessage('Reminder sent and recorded.')
+      setRows((current) => current.map((item) => item.id === recordId ? { ...item, notified: true } : item))
+      setMessage(`Reminder email opened for ${email}.`)
     } catch (err: any) {
       setMessage(err?.message || 'Unable to send the reminder.')
     } finally {
@@ -3233,31 +3804,37 @@ function AdminOverdueBooks() {
     <div>
       <PageHeader title="Overdue Books" subtitle="Students with overdue borrowed books." />
       {message && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</div>}
-      <Table headers={['Student', 'Email', 'Book', 'Due Date', 'Days Overdue', 'Notified', 'Action']}>
-        {overdueRecords.map((r, i) => (
-          <Tr key={i}>
-            <Td className="font-medium text-gray-900">{r.student}</Td>
-            <Td className="text-gray-500">{r.email}</Td>
-            <Td>{r.book}</Td>
-            <Td className="text-red-600 font-medium">{r.due}</Td>
-            <Td>
-              <span className="font-bold text-red-600">{r.daysOverdue}</span>
-              <span className="text-gray-400 text-xs"> days</span>
-            </Td>
-            <Td>
-              {r.notified
-                ? <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium"><Icons.Check />Sent</span>
-                : <span className="text-gray-400 text-xs">Pending</span>}
-            </Td>
-            <Td>
-              <button onClick={() => handleSendReminder(String(i))} disabled={remindingId === String(i)} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
-                <Icons.Mail />
-                {remindingId === String(i) ? 'Sending...' : 'Send Reminder'}
-              </button>
-            </Td>
-          </Tr>
-        ))}
-      </Table>
+      {loading ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-8 text-center text-sm text-gray-500">Loading overdue books...</div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-green-200 bg-white p-8 text-center text-sm text-gray-500">No overdue books found.</div>
+      ) : (
+        <Table headers={['Student', 'Email', 'Book', 'Due Date', 'Days Overdue', 'Notified', 'Action']}>
+          {rows.map((r) => (
+            <Tr key={r.id}>
+              <Td className="font-medium text-gray-900">{r.student}</Td>
+              <Td className="text-gray-500">{r.email}</Td>
+              <Td>{r.book}</Td>
+              <Td className="text-red-600 font-medium">{r.due}</Td>
+              <Td>
+                <span className="font-bold text-red-600">{r.daysOverdue}</span>
+                <span className="text-gray-400 text-xs"> days</span>
+              </Td>
+              <Td>
+                {r.notified
+                  ? <span className="inline-flex items-center gap-1 text-green-600 text-xs font-medium"><Icons.Check />Sent</span>
+                  : <span className="text-gray-400 text-xs">Pending</span>}
+              </Td>
+              <Td>
+                <button onClick={() => handleSendReminder(String(r.id))} disabled={remindingId === String(r.id)} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60">
+                  <Icons.Mail />
+                  {remindingId === String(r.id) ? 'Sending...' : 'Send Reminder'}
+                </button>
+              </Td>
+            </Tr>
+          ))}
+        </Table>
+      )}
     </div>
   )
 }
@@ -3519,8 +4096,209 @@ function AdminLibraryCards() {
 }
 
 function AdminReports() {
-  function handleGenerate(reportName: string) {
-    window.alert(`${reportName} generated successfully.`)
+  const [generating, setGenerating] = useState<string | null>(null)
+
+  function printReport(title: string, html: string) {
+    const printWindow = window.open('', '_blank', 'width=1000,height=900')
+    if (!printWindow) {
+      window.alert('Please allow pop-ups to generate the report.')
+      return
+    }
+
+    const css = `
+      <style>
+        body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+        h1 { font-size: 24px; margin-bottom: 12px; }
+        .meta { color: #4b5563; margin-bottom: 18px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+        th, td { border: 1px solid #d1d5db; padding: 8px 10px; text-align: left; font-size: 12px; }
+        th { background: #f3f4f6; }
+        .kpi { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+        .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #f9fafb; }
+        .card strong { display: block; font-size: 18px; margin-top: 8px; }
+      </style>
+    `
+
+    printWindow.document.write(`<!doctype html><html><head><title>${title}</title>${css}</head><body>${html}</body></html>`)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      printWindow.print()
+    }, 250)
+  }
+
+  async function handleGenerate(reportName: string) {
+    try {
+      setGenerating(reportName)
+
+      const [booksResult, loansResult, studentsResult] = await Promise.all([
+        supabase.from('books').select('*').limit(200),
+        supabase.from('borrowing_records').select('*').limit(300),
+        supabase.from('students').select('*').limit(200),
+      ])
+
+      const books = booksResult.data ?? []
+      const loans = loansResult.data ?? []
+      const students = studentsResult.data ?? []
+
+      const now = new Date()
+      const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      const monthlyBorrowing = monthLabels.map((month, index) => {
+        const count = (loans as any[]).filter((row) => {
+          if (!row?.borrow_date) return false
+          const date = new Date(row.borrow_date)
+          return !Number.isNaN(date.getTime()) && date.getFullYear() === now.getFullYear() && date.getMonth() === index
+        }).length
+
+        return { month, count }
+      })
+
+      const overdueLoans = (loans as any[]).filter((row) => {
+        if (!row?.due_date || row?.return_date) return false
+        const due = new Date(row.due_date)
+        return !Number.isNaN(due.getTime()) && due < now
+      })
+
+      const popularBooks = books
+        .map((book: any) => ({
+          title: book.title,
+          author: book.author,
+          borrowCount: (loans as any[]).filter((row) => row?.book_id === book.id).length,
+          available: Number(book.available_copies ?? 0),
+          total: Number(book.total_copies ?? 0),
+        }))
+        .sort((a, b) => b.borrowCount - a.borrowCount)
+        .slice(0, 10)
+
+      const studentActivity = students
+        .map((student: any) => ({
+          name: student.name ?? student.full_name ?? 'Unknown student',
+          studentCode: student.student_code ?? student.studentId ?? 'N/A',
+          borrowCount: (loans as any[]).filter((row) => String(row.student_id) === String(student.id)).length,
+        }))
+        .sort((a, b) => b.borrowCount - a.borrowCount)
+        .slice(0, 10)
+
+      const totalAvailable = books.reduce((sum, book: any) => sum + Number(book.available_copies ?? 0), 0)
+      const totalCopies = books.reduce((sum, book: any) => sum + Number(book.total_copies ?? 0), 0)
+
+      const damageRows = books.filter((book: any) => Number(book.damaged ?? 0) > 0 || Number(book.lost ?? 0) > 0)
+
+      const reportMap: Record<string, string> = {
+        'Monthly Borrowing Report': `
+          <h1>Monthly Borrowing Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <div class="kpi">
+            <div class="card">Total Borrowings<strong>${loans.length}</strong></div>
+            <div class="card">Students<strong>${students.length}</strong></div>
+            <div class="card">Books<strong>${books.length}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Month</th><th>Borrowings</th></tr></thead>
+            <tbody>
+              ${monthlyBorrowing.map((entry) => `<tr><td>${entry.month}</td><td>${entry.count}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `,
+        'Damage Report': `
+          <h1>Damage Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <div class="kpi">
+            <div class="card">Damaged Titles<strong>${damageRows.length}</strong></div>
+            <div class="card">Total Damaged Copies<strong>${damageRows.reduce((sum, book: any) => sum + Number(book.damaged ?? 0), 0)}</strong></div>
+            <div class="card">Lost Copies<strong>${damageRows.reduce((sum, book: any) => sum + Number(book.lost ?? 0), 0)}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Title</th><th>Category</th><th>Damaged</th><th>Lost</th></tr></thead>
+            <tbody>
+              ${damageRows.length ? damageRows.map((book: any) => `<tr><td>${book.title}</td><td>${book.category}</td><td>${book.damaged ?? 0}</td><td>${book.lost ?? 0}</td></tr>`).join('') : '<tr><td colspan="4">No damaged or lost books found.</td></tr>'}
+            </tbody>
+          </table>
+        `,
+        'Overdue Report': `
+          <h1>Overdue Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <div class="kpi">
+            <div class="card">Overdue Items<strong>${overdueLoans.length}</strong></div>
+            <div class="card">Active Loans<strong>${loans.filter((row: any) => !row.return_date).length}</strong></div>
+            <div class="card">Late Fees<strong>₱${(overdueLoans.length * 5).toFixed(2)}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Student</th><th>Book</th><th>Due Date</th><th>Days Late</th></tr></thead>
+            <tbody>
+              ${overdueLoans.length ? overdueLoans.map((row: any) => {
+          const due = new Date(row.due_date)
+          const book = books.find((b: any) => b.id === row.book_id)
+          const student = students.find((s: any) => s.id === row.student_id)
+          const daysLate = Math.max(0, Math.ceil((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)))
+          return `<tr><td>${student?.name ?? 'Unknown student'}</td><td>${book?.title ?? 'Unknown book'}</td><td>${due.toLocaleDateString()}</td><td>${daysLate}</td></tr>`
+        }).join('') : '<tr><td colspan="4">No overdue records found.</td></tr>'}
+            </tbody>
+          </table>
+        `,
+        'Book Inventory Report': `
+          <h1>Book Inventory Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <div class="kpi">
+            <div class="card">Total Copies<strong>${totalCopies}</strong></div>
+            <div class="card">Available<strong>${totalAvailable}</strong></div>
+            <div class="card">Titles<strong>${books.length}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Title</th><th>Category</th><th>Available</th><th>Total</th></tr></thead>
+            <tbody>
+              ${books.map((book: any) => `<tr><td>${book.title}</td><td>${book.category}</td><td>${book.available_copies ?? 0}</td><td>${book.total_copies ?? 0}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `,
+        'Student Activity Report': `
+          <h1>Student Activity Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <table>
+            <thead><tr><th>Student</th><th>ID</th><th>Borrow Count</th></tr></thead>
+            <tbody>
+              ${studentActivity.map((student) => `<tr><td>${student.name}</td><td>${student.studentCode}</td><td>${student.borrowCount}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `,
+        'Popular Books Report': `
+          <h1>Popular Books Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <table>
+            <thead><tr><th>Rank</th><th>Title</th><th>Author</th><th>Borrow Count</th></tr></thead>
+            <tbody>
+              ${popularBooks.map((book, index) => `<tr><td>${index + 1}</td><td>${book.title}</td><td>${book.author}</td><td>${book.borrowCount}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `,
+        'Annual Summary Report': `
+          <h1>Annual Summary Report</h1>
+          <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+          <div class="kpi">
+            <div class="card">Borrowed<strong>${loans.length}</strong></div>
+            <div class="card">Returned<strong>${loans.filter((row: any) => row.return_date).length}</strong></div>
+            <div class="card">Overdue<strong>${overdueLoans.length}</strong></div>
+          </div>
+          <table>
+            <thead><tr><th>Month</th><th>Borrowings</th></tr></thead>
+            <tbody>
+              ${monthlyBorrowing.map((entry) => `<tr><td>${entry.month}</td><td>${entry.count}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        `,
+      }
+
+      const content = reportMap[reportName]
+      if (!content) {
+        throw new Error(`Report not available: ${reportName}`)
+      }
+
+      printReport(reportName, content)
+    } catch (error: any) {
+      window.alert(error?.message || 'Unable to generate the report.')
+    } finally {
+      setGenerating(null)
+    }
   }
 
   return (
@@ -3529,6 +4307,7 @@ function AdminReports() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {[
           { title: 'Monthly Borrowing Report', desc: 'Summary of all borrowings for the current period', icon: <Icons.BarChart /> },
+          { title: 'Damage Report', desc: 'Damaged and lost book inventory overview', icon: <Icons.AlertCircle /> },
           { title: 'Overdue Report', desc: 'All overdue books and penalty computations', icon: <Icons.AlertCircle /> },
           { title: 'Book Inventory Report', desc: 'Current stock and availability status', icon: <Icons.Book /> },
           { title: 'Student Activity Report', desc: 'Per-student borrowing and return statistics', icon: <Icons.Users /> },
@@ -3541,8 +4320,8 @@ function AdminReports() {
               <div className="font-semibold text-gray-900 text-sm">{r.title}</div>
               <div className="text-xs text-gray-500 mt-0.5">{r.desc}</div>
             </div>
-            <button onClick={() => handleGenerate(r.title)} className="mt-auto py-2 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors">
-              Generate PDF
+            <button onClick={() => handleGenerate(r.title)} disabled={generating === r.title} className="mt-auto py-2 border border-green-200 text-green-700 text-sm font-medium rounded-lg hover:bg-green-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60">
+              {generating === r.title ? 'Generating...' : 'Generate PDF'}
             </button>
           </div>
         ))}
@@ -3718,7 +4497,7 @@ function AdminSettings() {
 }
 
 // ─── Student Layout ────────────────────────────────────────────────────────────
-function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => void; studentId?: string; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string } }) {
+function StudentLayout({ onLogout, studentId, userProfile, onProfileUpdate }: { onLogout: () => void; studentId?: string; userProfile?: { name?: string; studentId?: string; email?: string; course?: string; card?: string; studentCode?: string; avatar_url?: string | null }; onProfileUpdate?: (nextProfile: any) => void }) {
   const [view, setView] = useState<StudentView>('dashboard')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isMobile = useIsMobile(900)
@@ -3733,7 +4512,6 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
     { id: 'search', label: 'Search Books', icon: <Icons.Search /> },
     { id: 'borrowed', label: 'My Borrowed Books', icon: <Icons.Book /> },
     { id: 'history', label: 'Borrowing History', icon: <Icons.History /> },
-    { id: 'borrower-card', label: 'Borrower Card', icon: <Icons.FileText /> },
     { id: 'card', label: 'Library Card', icon: <Icons.IdCard /> },
     { id: 'profile', label: 'Profile', icon: <Icons.User /> },
   ]
@@ -3748,12 +4526,10 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
         return <MyBorrowedBooks userProfile={userProfile} />
       case 'history':
         return <BorrowingHistory userProfile={userProfile} />
-      case 'borrower-card':
-        return <StudentBorrowerCard userProfile={userProfile} />
       case 'card':
         return <LibraryCard userProfile={userProfile} />
       case 'profile':
-        return <Profile userProfile={userProfile} />
+        return <Profile userProfile={userProfile} onProfileSave={onProfileUpdate} />
       default:
         return <MobileDashboard currentView={view} onNavigate={(id) => setView(id as StudentView)} onLogout={onLogout} userProfile={userProfile} />
     }
@@ -3793,9 +4569,8 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
       case 'search': return <SearchBooks studentId={studentId} userProfile={userProfile} />
       case 'borrowed': return <MyBorrowedBooks userProfile={userProfile} />
       case 'history': return <BorrowingHistory userProfile={userProfile} />
-      case 'borrower-card': return <StudentBorrowerCard userProfile={userProfile} />
       case 'card': return <LibraryCard userProfile={userProfile} />
-      case 'profile': return <Profile userProfile={userProfile} />
+      case 'profile': return <Profile userProfile={userProfile} onProfileSave={onProfileUpdate} />
     }
   }
 
@@ -3804,7 +4579,6 @@ function StudentLayout({ onLogout, studentId, userProfile }: { onLogout: () => v
     { id: 'search', label: 'Search Books', icon: <Icons.Search /> },
     { id: 'borrowed', label: 'My Borrowed Books', icon: <Icons.Book /> },
     { id: 'history', label: 'Borrowing History', icon: <Icons.History /> },
-    { id: 'borrower-card', label: 'Borrower Card', icon: <Icons.FileText /> },
     { id: 'card', label: 'Library Card', icon: <Icons.IdCard /> },
     { id: 'profile', label: 'Profile', icon: <Icons.User /> },
   ]
@@ -3854,7 +4628,6 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
     { id: 'books', label: 'Books', icon: <Icons.Book /> },
     { id: 'app-users', label: 'Users', icon: <Icons.Users /> },
     { id: 'library-cards', label: 'Library Cards', icon: <Icons.IdCard /> },
-    { id: 'borrower-cards', label: 'Borrower Cards', icon: <Icons.Book /> },
     { id: 'borrowing-records', label: 'Borrowing Records', icon: <Icons.FileText /> },
     { id: 'returns', label: 'Returns', icon: <Icons.RefreshCw /> },
     { id: 'overdue', label: 'Overdue Books', icon: <Icons.AlertCircle /> },
@@ -3868,7 +4641,6 @@ function AdminLayout({ onLogout, dashboard }: { onLogout: () => void; dashboard?
       case 'books': return <AdminBooks />
       case 'app-users': return <AdminUsers />
       case 'library-cards': return <AdminLibraryCards />
-      case 'borrower-cards': return <AdminBorrowerCards />
       case 'borrowing-records': return <AdminBorrowingRecords />
       case 'returns': return <AdminReturns />
       case 'overdue': return <AdminOverdueBooks />
@@ -3901,9 +4673,9 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const recent = dashboard?.records ?? borrowingRecords
   const overdue = dashboard?.overdue ?? overdueRecords
 
-  const [recentRecords, setRecentRecords] = useState<Array<any>>(recent?.slice(0, 10) ?? [])
+  const [recentRecords, setRecentRecords] = useState<Array<any>>(recent?.slice(0, 5) ?? [])
   const [page, setPage] = useState<number>(0)
-  const pageSize = 10
+  const pageSize = 5
   const [totalCount, setTotalCount] = useState<number>(0)
 
   const normalizeRecentBorrowRow = (row: any) => {
@@ -3962,60 +4734,43 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
         const start = page * pageSize
         const end = start + pageSize - 1
 
-        const { data: borrowRows, error: borrowErr, count } = await supabase
-          .from('borrowing_records')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .range(start, end)
+        const [{ data: borrowRows, error: borrowErr, count }, { data: bookRows }, { data: loginRows }] = await Promise.all([
+          supabase
+            .from('borrowing_records')
+            .select('*', { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(start, end),
+          supabase.from('books').select('id, title, cover_url').limit(10),
+          supabase.from('student_login_accounts').select('*').limit(200),
+        ])
 
         if (borrowErr) throw borrowErr
 
-        if (!borrowRows || borrowRows.length === 0) {
-          if (dashboard?.records && Array.isArray(dashboard.records)) {
-            const normalized = sortRecentBorrowRows(dashboard.records.map((record: any) => normalizeRecentBorrowRow(record)))
-            if (active) {
-              setRecentRecords(normalized.slice(start, start + pageSize))
-              setTotalCount(normalized.length)
-            }
-            return
-          }
+        const fallbackRecords = Array.isArray(dashboard?.records) ? dashboard.records : []
+        const resolvedBorrowRows = Array.isArray(borrowRows) && borrowRows.length > 0 ? borrowRows : fallbackRecords
 
-          if (active) setRecentRecords([])
-          if (active) setTotalCount(count ?? 0)
+        if (!resolvedBorrowRows || resolvedBorrowRows.length === 0) {
+          if (active) {
+            setRecentRecords([])
+            setTotalCount(0)
+          }
           return
         }
 
-        const studentIds = [...new Set(borrowRows.map((r: any) => String(r.student_id ?? r.studentId ?? r.student_code ?? r.studentCode ?? '').trim()).filter(Boolean))]
-        const bookIds = [...new Set(borrowRows.map((r: any) => String(r.book_id ?? r.bookId ?? '').trim()).filter(Boolean))]
-
-        const { data: studentRows } = studentIds.length > 0 ? await supabase.from('students').select('id, name').in('id', studentIds).catch(() => ({ data: [] })) : { data: [] }
-        const { data: bookRows } = bookIds.length > 0 ? await supabase.from('books').select('id, title').in('id', bookIds).catch(() => ({ data: [] })) : { data: [] }
-        const { data: loginRowsByStudentId } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('*').in('student_id', studentIds).catch(() => ({ data: [] })) : { data: [] }
-        const { data: loginRowsById } = studentIds.length > 0 ? await supabase.from('student_login_accounts').select('*').in('id', studentIds).catch(() => ({ data: [] })) : { data: [] }
-
-        const loginRows = [...(loginRowsByStudentId ?? []), ...(loginRowsById ?? [])]
-
-        const studentMap = new Map<string, any>()
-          ; (studentRows ?? []).forEach((s: any) => {
-            const id = String(s?.id ?? '').trim()
-            const code = String(s?.student_code ?? '').trim()
-            if (id) studentMap.set(id, s)
-            if (code) studentMap.set(code, s)
+        const bookMap = new Map<string, any>()
+          ; (bookRows ?? []).forEach((book: any) => {
+            const id = String(book?.id ?? '').trim()
+            if (id) bookMap.set(id, book)
           })
 
         const loginMap = new Map<string, any>()
-          ; (loginRows || []).forEach((l: any) => {
-            const id = String(l?.id ?? '').trim()
-            const studentId = String(l?.student_id ?? '').trim()
-            const studentCode = String(l?.student_code ?? '').trim()
-            if (id) loginMap.set(id, l)
-            if (studentId) loginMap.set(studentId, l)
-            if (studentCode) loginMap.set(studentCode, l)
-          })
-        const bookMap = new Map<string, any>()
-          ; (bookRows ?? []).forEach((b: any) => {
-            const id = String(b?.id ?? '').trim()
-            if (id) bookMap.set(id, b)
+          ; (loginRows ?? []).forEach((login: any) => {
+            const id = String(login?.id ?? '').trim()
+            const studentId = String(login?.student_id ?? '').trim()
+            const studentCode = String(login?.student_code ?? '').trim()
+            if (id) loginMap.set(id, login)
+            if (studentId) loginMap.set(studentId, login)
+            if (studentCode) loginMap.set(studentCode, login)
           })
 
         const resolveStudentName = (row: any) => {
@@ -4031,17 +4786,14 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
           for (const key of keys) {
             const loginRow = loginMap.get(key)
             if (loginRow?.full_name) return String(loginRow.full_name).trim()
-
-            const studentRow = studentMap.get(key)
-            if (studentRow?.name) return String(studentRow.name).trim()
           }
 
           return 'Unknown student'
         }
 
-        const resolveBookTitle = (row: any) => {
-          const direct = String(row?.book_title ?? row?.bookTitle ?? row?.title ?? row?.book_name ?? '').trim()
-          if (direct) return direct
+        const resolveBookMeta = (row: any) => {
+          const directTitle = String(row?.book_title ?? row?.bookTitle ?? row?.title ?? row?.book_name ?? '').trim()
+          const directCover = String(row?.cover_url ?? row?.coverUrl ?? '').trim()
 
           const keys = [
             String(row?.book_id ?? row?.bookId ?? '').trim(),
@@ -4050,21 +4802,33 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
 
           for (const key of keys) {
             const book = bookMap.get(key)
-            if (book?.title) return String(book.title).trim()
+            if (book) {
+              const fallbackTitle = directTitle || 'Unknown book'
+              const fallbackCover = directCover || ''
+              return {
+                title: String(book.title ?? fallbackTitle).trim(),
+                cover_url: String((book.cover_url ?? book.coverUrl) ?? fallbackCover).trim(),
+              }
+            }
           }
 
-          return 'Unknown book'
+          return {
+            title: directTitle || 'Unknown book',
+            cover_url: directCover || '',
+          }
         }
 
-        const mapped = (borrowRows || []).map((r: any) => {
-          const dueValue = r.due_date ?? r.dueDate ?? r.return_due_date ?? r.returnDate ?? 'N/A'
-          const computedStatus = String(r.status ?? '').trim().toLowerCase() || inferLoanStatus(String(dueValue))
+        const mapped = (resolvedBorrowRows || []).map((record: any) => {
+          const dueValue = record?.due_date ?? record?.dueDate ?? record?.return_due_date ?? record?.returnDate ?? 'N/A'
+          const computedStatus = String(record?.status ?? '').trim().toLowerCase() || inferLoanStatus(String(dueValue))
+          const bookMeta = resolveBookMeta(record)
 
           return {
-            id: r.id,
-            txn: r.txn_code ?? r.id,
-            student: resolveStudentName(r),
-            book: resolveBookTitle(r),
+            id: record?.id,
+            txn: record?.txn_code ?? record?.txn ?? record?.id,
+            student: resolveStudentName(record),
+            book: bookMeta.title,
+            cover_url: bookMeta.cover_url,
             due: dueValue,
             status: computedStatus,
           }
@@ -4073,7 +4837,7 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
         const sorted = sortRecentBorrowRows(mapped)
 
         if (active) {
-          setRecentRecords(sorted.slice(start, end + 1))
+          setRecentRecords(sorted.slice(0, 5))
           setTotalCount(count ?? sorted.length)
         }
       } catch (err) {
@@ -4097,7 +4861,26 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
   const monthlyBorrowings = stats?.monthlyBorrowings ?? []
   const categoryCounts = stats?.categoryCounts ?? []
 
-  const maxMonth = monthlyBorrowings.length > 0 ? Math.max(...monthlyBorrowings, 1) : 1
+  const monthlyLabels = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  const chartValues = monthlyBorrowings.length > 0 ? monthlyBorrowings.slice(-12) : Array(12).fill(0)
+  const chartMax = Math.max(40, ...chartValues, 1)
+  const yTicks = [0, 10, 20, 30, 40]
+  const chartPadding = { top: 12, right: 10, bottom: 18, left: 18 }
+  const chartWidth = 100
+  const chartHeight = 100
+  const chartInnerWidth = chartWidth - chartPadding.left - chartPadding.right
+  const chartInnerHeight = chartHeight - chartPadding.top - chartPadding.bottom
+  const chartPoints = chartValues.map((value, index) => {
+    const x = chartPadding.left + (index / Math.max(chartValues.length - 1, 1)) * chartInnerWidth
+    const y = chartHeight - chartPadding.bottom - ((value / chartMax) * chartInnerHeight)
+    return { x, y, value }
+  })
+  const chartPath = chartPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+  const chartAreaPath = `${chartPath} L ${chartWidth - chartPadding.right} ${chartHeight - chartPadding.bottom} L ${chartPadding.left} ${chartHeight - chartPadding.bottom} Z`
+  const gridLines = yTicks.map((tick) => {
+    const y = chartHeight - chartPadding.bottom - ((tick / chartMax) * chartInnerHeight)
+    return { tick, y }
+  })
 
   return (
     <div>
@@ -4156,25 +4939,48 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
 
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
         <div className="lg:col-span-2">
-          <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm">
+          <div className="bg-white rounded-xl border border-green-100 p-5 shadow-sm flex flex-col h-[340px]">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-green-900">Monthly Borrowings</h3>
               <div className="text-sm text-gray-400">{monthlyBorrowings.length > 0 ? 'Live trend' : 'No data yet'}</div>
             </div>
 
-            {monthlyBorrowings.length > 0 ? (
-              <div className="grid grid-cols-6 gap-3 items-end h-36">
-                {monthlyBorrowings.map((v: number, i: number) => {
-                  const height = Math.round((v / maxMonth) * 100)
-                  return (
-                    <div key={i} className="flex flex-col items-center gap-2">
-                      <div className="w-full flex items-end">
-                        <div className="w-full rounded-t-md bg-green-600" style={{ height: `${height}%` }} />
-                      </div>
-                      <div className="text-xs text-gray-500">{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'][i] ?? `M${i + 1}`}</div>
-                    </div>
-                  )
-                })}
+            {chartValues.some((value) => value > 0) ? (
+              <div className="relative flex-1 w-full overflow-hidden rounded-lg">
+                <svg viewBox="0 0 100 100" className="block h-full w-full" preserveAspectRatio="none" aria-label="Monthly borrowing trend">
+                  <defs>
+                    <linearGradient id="lineChartFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#16a34a" stopOpacity="0.30" />
+                      <stop offset="100%" stopColor="#16a34a" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  {gridLines.map((line) => (
+                    <g key={line.tick}>
+                      <line x1={chartPadding.left} y1={line.y} x2={chartWidth - chartPadding.right} y2={line.y} stroke="#d1d5db" strokeDasharray="2 2" strokeWidth="0.5" />
+                      <text x={4} y={line.y + 1.5} fontSize="3.2" fill="#6b7280">{line.tick}</text>
+                    </g>
+                  ))}
+                  {chartPoints.map((point, index) => {
+                    const x = chartPadding.left + (index / Math.max(chartValues.length - 1, 1)) * (chartWidth - chartPadding.left - chartPadding.right)
+                    const isLast = index === chartPoints.length - 1
+                    return (
+                      <g key={`${point.x}-${point.y}`}>
+                        {index === 0 ? (
+                          <line x1={chartPadding.left} y1={chartHeight - chartPadding.bottom} x2={chartWidth - chartPadding.right} y2={chartHeight - chartPadding.bottom} stroke="#9ca3af" strokeWidth="0.7" />
+                        ) : null}
+                        {!isLast ? (
+                          <line x1={x} y1={chartPadding.top} x2={x} y2={chartHeight - chartPadding.bottom} stroke="#e5e7eb" strokeDasharray="1.5 2" strokeWidth="0.4" />
+                        ) : null}
+                        <line x1={chartPadding.left} y1={chartPadding.top} x2={chartPadding.left} y2={chartHeight - chartPadding.bottom} stroke="#9ca3af" strokeWidth="0.7" />
+                        <circle cx={point.x} cy={point.y} r="1.4" fill="#16a34a" />
+                        <text x={point.x} y={Math.max(point.y - 4, 12)} textAnchor="middle" fontSize="3.2" fill="#16a34a">{point.value}</text>
+                        <text x={point.x} y="97" textAnchor="middle" fontSize="3.4" fill="#6b7280">{monthlyLabels[index]?.slice(0, 3) ?? `M${index + 1}`}</text>
+                      </g>
+                    )
+                  })}
+                  <path d={chartAreaPath} fill="url(#lineChartFill)" />
+                  <path d={chartPath} fill="none" stroke="#16a34a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </div>
             ) : (
               <div className="flex h-36 items-center justify-center rounded-lg border border-dashed border-green-200 bg-green-50 text-sm text-gray-500">
@@ -4194,10 +5000,19 @@ function AdminDashboard({ dashboard }: { dashboard?: any | null }) {
               </div>
             </div>
             <Table headers={["Student", "Book", "Due Date", "Status"]}>
-              {recentRecords.slice(0, 6).map((r: any, idx: number) => (
+              {recentRecords.slice(0, 5).map((r: any, idx: number) => (
                 <Tr key={r.txn ?? r.id ?? idx}>
                   <Td className="font-medium">{r.student}</Td>
-                  <Td className="text-gray-500 text-xs">{r.book}</Td>
+                  <Td className="text-gray-500 text-xs">
+                    <div className="flex items-center gap-3">
+                      {r.cover_url ? (
+                        <img src={String(r.cover_url)} alt={String(r.book || 'Book cover')} className="h-12 w-9 rounded-md border border-gray-200 object-cover shadow-sm" />
+                      ) : (
+                        <div className="h-12 w-9 rounded-md border border-gray-200 bg-gray-50 flex items-center justify-center text-[10px] font-semibold text-gray-500">No cover</div>
+                      )}
+                      <span>{r.book}</span>
+                    </div>
+                  </Td>
                   <Td>{r.due}</Td>
                   <Td><StatusBadge status={r.status} /></Td>
                 </Tr>
@@ -4263,6 +5078,7 @@ type AuthState = {
   studentCode?: string
   course?: string
   card?: string
+  avatar_url?: string | null
 }
 
 export default function App() {
@@ -4273,6 +5089,147 @@ export default function App() {
   // Do not trigger the legacy students/library_cards sync because those tables are not present.
   useEffect(() => {
     startAuthSync()
+  }, [])
+
+  // Persist custom auth to localStorage so app-managed logins survive refresh
+  useEffect(() => {
+    try {
+      if (auth) {
+        window.localStorage.setItem('lms-auth', JSON.stringify(auth))
+      } else {
+        window.localStorage.removeItem('lms-auth')
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [auth])
+
+  async function hydrateAuthFromDatabase(nextAuth: AuthState | null): Promise<AuthState | null> {
+    if (!nextAuth || nextAuth.role !== 'student') return nextAuth
+
+    const lookupKey = String(nextAuth.studentCode ?? nextAuth.studentId ?? nextAuth.email ?? '').trim()
+    if (!lookupKey) return nextAuth
+
+    try {
+      const { data: loginRows, error: loginError } = await supabase
+        .from('student_login_accounts')
+        .select('*')
+        .or(`student_id.eq.${lookupKey},student_code.eq.${lookupKey}`)
+        .limit(1)
+
+      if (loginError) {
+        console.warn('[auth-hydrate] login lookup failed', loginError)
+        return nextAuth
+      }
+
+      const loginRow = Array.isArray(loginRows) && loginRows.length > 0 ? loginRows[0] : null
+      const candidateStudentCode = String(loginRow?.student_code ?? nextAuth.studentCode ?? nextAuth.studentId ?? '').trim()
+
+      let studentRow: any = null
+      if (candidateStudentCode) {
+        const { data: studentRows, error: studentError } = await supabase
+          .from('students')
+          .select('*')
+          .or(`student_code.eq.${candidateStudentCode},email.eq.${nextAuth.email ?? ''}`)
+          .limit(1)
+
+        if (!studentError && Array.isArray(studentRows) && studentRows.length > 0) {
+          studentRow = studentRows[0]
+        }
+      }
+
+      const hydrated: AuthState = {
+        ...nextAuth,
+        studentCode: String(studentRow?.student_code ?? loginRow?.student_code ?? nextAuth.studentCode ?? nextAuth.studentId ?? '').trim() || nextAuth.studentCode,
+        studentId: String(studentRow?.student_code ?? loginRow?.student_id ?? nextAuth.studentId ?? nextAuth.studentCode ?? '').trim() || nextAuth.studentId,
+        name: String(studentRow?.name ?? loginRow?.full_name ?? nextAuth.name ?? 'Student').trim() || 'Student',
+        email: String(studentRow?.email ?? nextAuth.email ?? '').trim() || nextAuth.email,
+        course: String(studentRow?.course ?? loginRow?.course ?? nextAuth.course ?? 'Unassigned').trim() || 'Unassigned',
+        card: String(nextAuth.card ?? '').trim() || (candidateStudentCode ? `CARD-${candidateStudentCode.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12) || 'STUDENT'}` : 'N/A'),
+        avatar_url: studentRow?.avatar_url ?? loginRow?.avatar_url ?? nextAuth.avatar_url ?? null,
+      }
+
+      return hydrated
+    } catch (err) {
+      console.warn('[auth-hydrate] failed', err)
+      return nextAuth
+    }
+  }
+
+  // Restore app-managed auth from localStorage when no Supabase auth present
+  useEffect(() => {
+    let mounted = true
+
+      ; (async () => {
+        try {
+          if (!auth) {
+            const raw = window.localStorage.getItem('lms-auth')
+            if (raw) {
+              const parsed = JSON.parse(raw)
+              if (parsed && typeof parsed === 'object') {
+                const hydrated = await hydrateAuthFromDatabase(parsed)
+                if (mounted) setAuth(hydrated)
+              }
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      })()
+
+    return () => { mounted = false }
+  }, [])
+
+  // Try to restore Supabase auth session on load and hydrate profile/avatar
+  useEffect(() => {
+    let mounted = true
+      ; (async () => {
+        try {
+          const { data } = await supabase.auth.getUser()
+          const user = (data as any)?.user ?? null
+          if (!user) return
+
+          // Try to load profile row (auth-linked) and student record
+          let profileRow: any = null
+          try {
+            const { data: p } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+            profileRow = p ?? null
+          } catch (e) {
+            profileRow = null
+          }
+
+          let studentRow: any = null
+          try {
+            const studentId = profileRow?.student_id ?? null
+            if (studentId) {
+              const { data: s } = await supabase.from('students').select('*').or(`student_code.eq.${studentId},id.eq.${studentId}`).maybeSingle()
+              studentRow = s ?? null
+            }
+          } catch (e) {
+            studentRow = null
+          }
+
+          if (!mounted) return
+
+          // Build auth state similar to handleLogin
+          const name = profileRow?.full_name ?? user?.user_metadata?.full_name ?? user?.email?.split('@')[0]
+          const studentCode = studentRow?.student_code ?? profileRow?.student_id ?? undefined
+          setAuth({
+            role: 'student',
+            userId: user.id,
+            studentId: studentCode ?? undefined,
+            email: profileRow?.email ?? user.email ?? undefined,
+            name: name,
+            studentCode: studentCode ?? undefined,
+            course: studentRow?.course ?? undefined,
+            card: studentRow?.card ?? undefined,
+            avatar_url: profileRow?.avatar_url ?? studentRow?.avatar_url ?? null,
+          })
+        } catch (err) {
+          // ignore
+        }
+      })()
+    return () => { mounted = false }
   }, [])
 
   async function handleLogin(role: Role, email: string, password: string) {
@@ -4292,6 +5249,7 @@ export default function App() {
       studentCode: effectiveStudentCode,
       course: student?.course ?? 'Unassigned',
       card: derivedCard,
+      avatar_url: (student as any)?.avatar_url ?? (res.user as any)?.avatar_url ?? null,
     })
   }
 
@@ -4312,7 +5270,22 @@ export default function App() {
 
   if (!auth) return <LoginPage onLogin={handleLogin} />
   if (auth.role === 'student') {
-    return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode }} />
+    const handleStudentProfileUpdate = (nextProfile: any) => {
+      setAuth((current) => {
+        if (!current || current.role !== 'student') return current
+        return {
+          ...current,
+          name: nextProfile?.name ?? current.name,
+          email: nextProfile?.email ?? current.email,
+          course: nextProfile?.course ?? current.course,
+          card: nextProfile?.card ?? current.card,
+          studentCode: nextProfile?.studentCode ?? nextProfile?.studentId ?? current.studentCode,
+          avatar_url: nextProfile?.avatar_url ?? current.avatar_url,
+        }
+      })
+    }
+
+    return <StudentLayout onLogout={() => setAuth(null)} studentId={auth.studentId} userProfile={{ name: auth.name, studentId: auth.studentCode ?? auth.studentId, email: auth.email, course: auth.course, card: auth.card, studentCode: auth.studentCode, avatar_url: (auth as any).avatar_url ?? null }} onProfileUpdate={handleStudentProfileUpdate} />
   }
 
   return <AdminLayout onLogout={() => setAuth(null)} dashboard={dashboard} />

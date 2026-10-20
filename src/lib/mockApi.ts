@@ -101,8 +101,8 @@ function reconcileBookAvailability(books: any[] = [], borrowingRecords: any[] = 
 }
 
 const persisted = loadMockData()
-const BOOKS = reconcileBookAvailability((persisted as any).books as Book[], (persisted as any).borrowing_records as any[]) as Book[]
-const STUDENTS = (persisted as any).students as Student[]
+let BOOKS = reconcileBookAvailability((persisted as any).books as Book[], (persisted as any).borrowing_records as any[]) as Book[]
+let STUDENTS = (persisted as any).students as Student[]
 const APP_USERS = (persisted as any).app_users as any[]
 const CARDS = (persisted as any).library_cards as LibraryCard[]
 let BORROWING = (persisted as any).borrowing_records as any[]
@@ -233,10 +233,72 @@ export async function fetchStudents() {
 
 export async function fetchLibraryCards() { return CARDS }
 export async function fetchSettings() { return { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'admin@library.local' } as Settings }
-export async function fetchAllBorrowingRecords() { return [] as BorrowingRecordWithDetails[] }
-export async function fetchStudentBorrowingRecords(_studentId: string) { return [] as BorrowingRecordWithDetails[] }
-export async function fetchActiveBorrowingRecords() { return [] as BorrowingRecordWithDetails[] }
-export async function fetchReturnedRecords() { return [] as BorrowingRecordWithDetails[] }
+
+function withDashboardMetadata(record: any) {
+    const book = (BOOKS as any[]).find((candidate: any) => {
+        const recordBookId = String(record?.book_id ?? '').trim()
+        if (!recordBookId) return false
+        return String(candidate?.id ?? '').trim() === recordBookId || String(candidate?.book_code ?? '').trim() === recordBookId || String(candidate?.isbn ?? '').trim() === recordBookId
+    })
+
+    const student = (STUDENTS as any[]).find((candidate: any) => {
+        const recordStudentId = String(record?.student_id ?? '').trim()
+        if (!recordStudentId) return false
+        return String(candidate?.id ?? '').trim() === recordStudentId || String(candidate?.student_code ?? '').trim() === recordStudentId
+    })
+
+    const dueDate = String(record?.due_date ?? record?.dueDate ?? '').trim() || 'N/A'
+    const normalizedStatus = String(record?.status ?? '').trim().toLowerCase()
+    const status = normalizedStatus || (record?.return_date ? 'returned' : (dueDate !== 'N/A' && new Date(`${dueDate}T00:00:00`) < new Date() ? 'overdue' : 'active'))
+
+    return {
+        ...record,
+        book_title: book?.title ?? 'Unknown book',
+        book_author: book?.author ?? 'Unknown author',
+        student_name: student?.name ?? 'Unknown student',
+        student_code: student?.student_code ?? '',
+        due_date: dueDate,
+        status,
+    } as BorrowingRecordWithDetails
+}
+
+export async function fetchAllBorrowingRecords() {
+    return BORROWING.map(withDashboardMetadata)
+}
+
+export async function fetchStudentBorrowingRecords(studentId: string) {
+    const trimmed = String(studentId ?? '').trim()
+    if (!trimmed) return [] as BorrowingRecordWithDetails[]
+
+    const indexed = new Set([
+        trimmed,
+        trimmed.toUpperCase(),
+        trimmed.toLowerCase(),
+        trimmed.replace(/^STU-?/i, ''),
+        `STU-${trimmed.replace(/^STU-?/i, '')}`,
+    ])
+
+    return BORROWING.filter((record: any) => {
+        const recordStudentId = String(record?.student_id ?? '').trim()
+        const student = STUDENTS.find((candidate: any) => {
+            const candidateIds = [
+                String(candidate?.id ?? '').trim(),
+                String(candidate?.student_code ?? '').trim(),
+                String(candidate?.email ?? '').trim(),
+            ]
+            return candidateIds.some((candidateId) => indexed.has(candidateId))
+        })
+        return student ? recordStudentId === String(student.id ?? '').trim() : recordStudentId === trimmed || recordStudentId === `STU-${trimmed.replace(/^STU-?/i, '')}`
+    }).map(withDashboardMetadata) as BorrowingRecordWithDetails[]
+}
+
+export async function fetchActiveBorrowingRecords() {
+    return BORROWING.filter((record: any) => !record?.return_date).map(withDashboardMetadata) as BorrowingRecordWithDetails[]
+}
+
+export async function fetchReturnedRecords() {
+    return BORROWING.filter((record: any) => !!record?.return_date).map(withDashboardMetadata) as BorrowingRecordWithDetails[]
+}
 
 export async function upsertBook(book: Partial<Book> & Pick<Book, 'book_code' | 'title' | 'author' | 'category'>) {
     const isbn = String((book as any).isbn ?? book.book_code ?? '').trim() || `978-${Date.now()}`
@@ -307,6 +369,22 @@ export async function deleteBook(id: string) {
 export async function upsertStudent(student: Partial<Student> & Pick<Student, 'student_code' | 'name' | 'email' | 'course'>) {
     const normalizedStudentCode = String(student.student_code ?? student.email ?? '').trim() || `STU-${Date.now()}`
     const suppliedPasswordHash = String((student as any).password_hash ?? '').trim()
+    const studentIdKey = String((student as any).student_id ?? normalizedStudentCode).trim() || normalizedStudentCode
+
+    let persistedPasswordHash = suppliedPasswordHash
+    try {
+        const { data: existingLoginRow, error: existingLoginError } = await supabase
+            .from('student_login_accounts')
+            .select('password_hash')
+            .or(`student_id.eq.${normalizedStudentCode},student_code.eq.${normalizedStudentCode}`)
+            .maybeSingle()
+
+        if (!existingLoginError && existingLoginRow && !persistedPasswordHash) {
+            persistedPasswordHash = String(existingLoginRow.password_hash ?? '').trim()
+        }
+    } catch {
+        // ignore lookup failure; the row can still be inserted if the hash is supplied elsewhere
+    }
 
     const baseStudentRecord = {
         id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
@@ -316,57 +394,64 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
         course: student.course,
         year_level: (student as any).year_level ?? '1st Year',
         status: (student as any).status ?? 'active',
+        avatar_url: (student as any).avatar_url ?? null,
     }
 
-    const loginPayload = suppliedPasswordHash
-        ? {
-            id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
-            student_id: normalizedStudentCode,
-            student_code: normalizedStudentCode,
-            full_name: student.name,
-            course: student.course,
-            year_level: (student as any).year_level ?? '1st Year',
-            status: (student as any).status ?? 'active',
-            password_hash: suppliedPasswordHash,
-        }
-        : null
+    const loginPayload = {
+        id: isUuid((student as any).id) ? (student as any).id : crypto.randomUUID(),
+        student_id: studentIdKey,
+        student_code: normalizedStudentCode,
+        full_name: student.name,
+        course: student.course,
+        year_level: (student as any).year_level ?? '1st Year',
+        status: (student as any).status ?? 'active',
+        avatar_url: (student as any).avatar_url ?? null,
+        ...(persistedPasswordHash ? { password_hash: persistedPasswordHash } : {}),
+    }
 
     try {
-        if (loginPayload) {
-            console.debug('[supabase] upsertStudent payload', loginPayload)
-            const { data, error } = await supabase
-                .from('student_login_accounts')
-                .upsert(loginPayload, { onConflict: 'student_id' })
-                .select()
-                .maybeSingle()
+        const { data: loginData, error: loginError } = await supabase
+            .from('student_login_accounts')
+            .upsert(loginPayload, { onConflict: 'student_id' })
+            .select()
+            .maybeSingle()
 
-            console.debug('[supabase] upsertStudent response', { data, error })
+        if (loginError) {
+            console.error('[supabase] upsertStudent loginAccounts error', loginError)
+            throw loginError
+        }
 
-            if (error) {
-                console.error('[supabase] upsertStudent error', error)
-                throw error
+        if (loginData) {
+            const saved = mapLoginRowToStudent(loginData)
+            const { data: studentRow, error: studentError } = await supabase.from('students').upsert([
+                {
+                    id: saved.id,
+                    student_code: saved.student_code,
+                    name: saved.name,
+                    email: saved.email,
+                    course: saved.course,
+                    year_level: saved.year_level,
+                    status: saved.status,
+                    avatar_url: (student as any).avatar_url ?? loginData.avatar_url ?? null,
+                },
+            ], { onConflict: 'student_code' }).select().maybeSingle()
+
+            if (studentError) {
+                console.error('[supabase] upsertStudent students error', studentError)
+                throw studentError
             }
 
-            if (data) {
-                const saved = mapLoginRowToStudent(data)
-                await supabase.from('students').upsert([
-                    {
-                        id: saved.id,
-                        student_code: saved.student_code,
-                        name: saved.name,
-                        email: saved.email,
-                        course: saved.course,
-                        year_level: saved.year_level,
-                        status: saved.status,
-                    },
-                ], { onConflict: 'student_code' }).select().maybeSingle()
-
-                const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
-                if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, saved)
-                else STUDENTS.push(saved)
-                saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
-                return saved
+            const finalSaved = {
+                ...saved,
+                ...(studentRow ?? {}),
+                avatar_url: (studentRow as any)?.avatar_url ?? (student as any).avatar_url ?? loginData.avatar_url ?? null,
             }
+
+            const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
+            if (existingIndex >= 0) STUDENTS.splice(existingIndex, 1, finalSaved)
+            else STUDENTS.push(finalSaved)
+            saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+            return finalSaved
         }
 
         const { data: existingStudent, error: studentError } = await supabase
@@ -380,6 +465,7 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
                     course: baseStudentRecord.course,
                     year_level: baseStudentRecord.year_level,
                     status: baseStudentRecord.status,
+                    avatar_url: baseStudentRecord.avatar_url,
                 },
             ], { onConflict: 'student_code' })
             .select()
@@ -400,6 +486,7 @@ export async function upsertStudent(student: Partial<Student> & Pick<Student, 's
                 course: existingStudent.course ?? baseStudentRecord.course,
                 year_level: existingStudent.year_level ?? baseStudentRecord.year_level,
                 status: existingStudent.status ?? baseStudentRecord.status,
+                avatar_url: existingStudent.avatar_url ?? null,
             } as Student
 
             const existingIndex = STUDENTS.findIndex((s) => s.student_code === saved.student_code || s.email === saved.email)
@@ -531,6 +618,9 @@ export async function processReturn(cardOrStudentId: string, bookQuery: string) 
 
     const loan = BORROWING.find((r) => r.student_id === studentId && r.book_id === book.id && !r.return_date)
     if (!loan) throw new Error('No active loan found for this book')
+    if (String(loan.status ?? '').toLowerCase() !== 'return_requested') {
+        throw new Error('This return must be requested by the student and approved by the admin before it is finalized.')
+    }
 
     const returnDate = new Date().toISOString().slice(0, 10)
     loan.return_date = returnDate
@@ -565,8 +655,111 @@ export async function refreshLoanStatuses() {
     saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
     return
 }
+
+async function syncLiveBorrowingStateFromSupabase() {
+    try {
+        const [{ data: borrowingRows, error: borrowingErr }, { data: bookRows, error: bookErr }, { data: loginRows, error: loginErr }] = await Promise.all([
+            supabase.from('borrowing_records').select('*').order('created_at', { ascending: false }).limit(50),
+            supabase.from('books').select('*').limit(10),
+            supabase.from('student_login_accounts').select('*').limit(200),
+        ])
+
+        if (borrowingErr || bookErr || loginErr) {
+            throw new Error(borrowingErr?.message ?? bookErr?.message ?? loginErr?.message ?? 'Unable to load live borrowing state.')
+        }
+
+        if (!Array.isArray(borrowingRows) || !borrowingRows.length) {
+            return
+        }
+
+        BORROWING = borrowingRows.map((record: any) => ({
+            ...record,
+            id: record.id ?? crypto.randomUUID(),
+            status: String(record.status ?? '').trim() || computeLoanStatus(record.due_date, record.return_date),
+        }))
+
+        if (Array.isArray(bookRows) && bookRows.length > 0) {
+            BOOKS = reconcileBookAvailability(bookRows.map(mapBookRow), BORROWING)
+        }
+
+        if (Array.isArray(loginRows) && loginRows.length > 0) {
+            STUDENTS = loginRows.map((login: any) => ({
+                id: login?.id ?? login?.student_id ?? login?.student_code ?? `student-${Date.now()}`,
+                student_code: login?.student_code ?? login?.student_id ?? '',
+                name: login?.full_name ?? login?.name ?? 'Student',
+                email: login?.email ?? '',
+                course: login?.course ?? 'Unassigned',
+                year_level: login?.year_level ?? '1st Year',
+                status: login?.status ?? 'active',
+                avatar_url: login?.avatar_url ?? login?.profile_image ?? null,
+            }))
+        }
+
+        saveMockData({ books: BOOKS, students: STUDENTS, app_users: APP_USERS, library_cards: CARDS, borrowing_records: BORROWING, settings: SETTINGS })
+    } catch (error) {
+        console.debug('[mockApi] live borrowing sync skipped', error)
+    }
+}
+
 export async function loadDashboardData() {
+    await syncLiveBorrowingStateFromSupabase()
     await refreshLoanStatuses()
-    const overdueRecords = BORROWING.filter((r) => !r.return_date && r.status === 'overdue')
-    return { books: BOOKS, students: STUDENTS, records: BORROWING, settings: await fetchSettings(), stats: { totalBooks: BOOKS.reduce((s, b) => s + (b.copies || 0), 0), availableBooks: BOOKS.reduce((s, b) => s + (b.available || 0), 0), borrowedBooks: BOOKS.reduce((s, b) => s + ((b.copies || 0) - (b.available || 0)), 0), overdueBooks: overdueRecords.length, totalStudents: STUDENTS.length } }
+
+    const normalizeDate = (value: string | null | undefined) => {
+        if (!value) return null
+        const parsed = new Date(String(value))
+        return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+
+    const currentDate = new Date()
+    const monthlyBorrowings = Array.from({ length: 12 }, (_, offset) => {
+        const monthIndex = (currentDate.getMonth() - (11 - offset) + 12) % 12
+        const year = currentDate.getFullYear() - (currentDate.getMonth() < 11 - offset ? 1 : 0)
+        const monthStart = new Date(year, monthIndex, 1)
+        const monthEnd = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999)
+
+        return BORROWING.filter((record: any) => {
+            const borrowDate = normalizeDate(record?.borrow_date ?? record?.created_at)
+            return borrowDate && borrowDate >= monthStart && borrowDate <= monthEnd
+        }).length
+    })
+
+    const categoryCounts = Array.from(new Map(
+        BOOKS.map((book: any) => [String(book?.category ?? 'Uncategorized'), 0])
+    ).keys()).map((name) => ({
+        name,
+        count: BOOKS.filter((book: any) => String(book?.category ?? 'Uncategorized') === name).length,
+    }))
+
+    const totalBooks = BOOKS.reduce((sum, book: any) => sum + Number(book?.total_copies ?? book?.copies ?? 1), 0)
+    const availableBooks = BOOKS.reduce((sum, book: any) => sum + Number(book?.available_copies ?? book?.available ?? 0), 0)
+    const overdueRecords = BORROWING.filter((record: any) => {
+        if (record?.return_date) return false
+        const dueDate = normalizeDate(record?.due_date ?? record?.dueDate)
+        return dueDate ? dueDate < new Date() : String(record?.status ?? '').toLowerCase() === 'overdue'
+    })
+    const thisMonthTx = BORROWING.filter((record: any) => {
+        const borrowDate = normalizeDate(record?.borrow_date ?? record?.created_at)
+        if (!borrowDate) return false
+        return borrowDate.getMonth() === currentDate.getMonth() && borrowDate.getFullYear() === currentDate.getFullYear()
+    }).length
+
+    const records = BORROWING.slice(0, 10).map(withDashboardMetadata)
+
+    return {
+        books: BOOKS,
+        students: STUDENTS,
+        records,
+        settings: await fetchSettings(),
+        stats: {
+            totalBooks,
+            availableBooks,
+            borrowedBooks: Math.max(totalBooks - availableBooks, 0),
+            overdueBooks: overdueRecords.length,
+            totalStudents: STUDENTS.length,
+            thisMonthTx,
+            monthlyBorrowings,
+            categoryCounts: categoryCounts.length ? categoryCounts : [],
+        },
+    }
 }
