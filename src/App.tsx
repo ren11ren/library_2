@@ -452,6 +452,38 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
 }
 
 // ─── Login Page ────────────────────────────────────────────────────────────────
+function NetworkErrorPage({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-emerald-50 to-white p-6">
+      <div className="w-full max-w-md rounded-3xl border border-emerald-100 bg-white p-8 text-center shadow-xl shadow-emerald-900/5">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8">
+            <path d="M3 12c2.5-2.5 5.7-3.8 9-3.8 3.3 0 6.5 1.3 9 3.8" />
+            <path d="M5.6 15.6c1.9-1.9 4.1-2.9 6.4-2.9 2.3 0 4.5 1 6.4 2.9" />
+            <path d="M8.2 19.2c1.2-1.2 2.6-1.8 3.8-1.8 1.2 0 2.6.6 3.8 1.8" />
+            <circle cx="12" cy="20.5" r="1.2" fill="currentColor" stroke="none" />
+          </svg>
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Connection lost</p>
+        <h1 className="mt-3 text-3xl font-bold text-slate-900">Network Error</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          Your internet connection appears to be unavailable. Please check your network and try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (onRetry) onRetry()
+            window.location.reload()
+          }}
+          className="mt-6 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password: string) => Promise<void> }) {
   const [role, setRole] = useState<Role>('student')
   const [email, setEmail] = useState('')
@@ -5179,6 +5211,26 @@ type AuthState = {
 export default function App() {
   const [auth, setAuth] = useState<AuthState | null>(null)
   const [dashboard, setDashboard] = useState<any | null>(null)
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    const intervalId = window.setInterval(() => {
+      const nextIsOnline = typeof navigator === 'undefined' ? true : navigator.onLine
+      setIsOnline((current) => current !== nextIsOnline ? nextIsOnline : current)
+    }, 1500)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      window.clearInterval(intervalId)
+    }
+  }, [])
 
   // The live project uses the custom student_login_accounts flow.
   // Do not trigger the legacy students/library_cards sync because those tables are not present.
@@ -5363,6 +5415,7 @@ export default function App() {
     }
   }, [auth])
 
+  if (!isOnline) return <NetworkErrorPage onRetry={() => setIsOnline(typeof navigator === 'undefined' ? true : navigator.onLine)} />
   if (!auth) return <LoginPage onLogin={handleLogin} />
   if (auth.role === 'student') {
     const handleStudentProfileUpdate = (nextProfile: any) => {
