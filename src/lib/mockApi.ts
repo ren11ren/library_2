@@ -660,7 +660,7 @@ async function syncLiveBorrowingStateFromSupabase() {
     try {
         const [{ data: borrowingRows, error: borrowingErr }, { data: bookRows, error: bookErr }, { data: loginRows, error: loginErr }] = await Promise.all([
             supabase.from('borrowing_records').select('*').order('created_at', { ascending: false }).limit(50),
-            supabase.from('books').select('*').limit(10),
+            supabase.from('books').select('*'),
             supabase.from('student_login_accounts').select('*').limit(200),
         ])
 

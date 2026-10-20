@@ -392,22 +392,19 @@ const historyBooks: any[] = []
 function deriveBookAvailability(book: any, borrowRows: any[] = []) {
   const totalCopies = Number(book?.total_copies ?? book?.totalCopies ?? book?.copies ?? 1)
   const explicitAvailable = Number(book?.available_copies ?? book?.availableCopies ?? book?.available ?? totalCopies)
+
+  if (Number.isFinite(explicitAvailable) && explicitAvailable >= 0) {
+    if (explicitAvailable > 0) return Math.max(0, Math.min(explicitAvailable, totalCopies))
+    if (totalCopies > 0) return totalCopies
+  }
+
   const activeBorrowCount = (borrowRows ?? []).filter((row: any) => {
     const matchesBook = String(row?.book_id ?? row?.bookId ?? '').trim() === String(book?.id ?? '').trim()
     const isActive = !row?.return_date && String(row?.status ?? '').toLowerCase() !== 'returned'
     return matchesBook && isActive
   }).length
 
-  const realAvailability = Math.max(0, totalCopies - activeBorrowCount)
-  const ifBorrowHistoryExists = (borrowRows ?? []).some((row: any) => {
-    const matchesBook = String(row?.book_id ?? row?.bookId ?? '').trim() === String(book?.id ?? '').trim()
-    const isActive = !row?.return_date && String(row?.status ?? '').toLowerCase() !== 'returned'
-    return matchesBook && isActive
-  })
-
-  if (ifBorrowHistoryExists) return realAvailability
-  if (Number.isFinite(explicitAvailable) && explicitAvailable >= 0) return Math.max(0, Math.min(explicitAvailable, totalCopies))
-  return totalCopies
+  return Math.max(0, totalCopies - activeBorrowCount)
 }
 
 function inferLoanStatus(dueDate?: string) {
@@ -2030,23 +2027,18 @@ function Profile({ userProfile, onProfileSave }: { userProfile?: { name?: string
         return
       }
 
-      let avatarUrl = profile.avatar_url ?? null
       const isRemoteAvatar = typeof avatarPreview === 'string' && /^(https?:\/\/)/.test(avatarPreview)
-      if (avatarFile) {
-        const nextDataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(String(reader.result ?? ''))
-          reader.onerror = () => reject(new Error('Unable to read the selected image.'))
-          reader.readAsDataURL(avatarFile)
-        })
+      let avatarUrl = isRemoteAvatar ? avatarPreview : (profile.avatar_url ?? null)
 
-        avatarUrl = nextDataUrl
-        setAvatarPreview(nextDataUrl)
-        setAvatarFile(null)
-      } else if (isRemoteAvatar) {
-        avatarUrl = avatarPreview
-      } else {
-        avatarUrl = profile.avatar_url ?? null
+      if (avatarFile) {
+        const hasRemoteStorage = false
+        if (!hasRemoteStorage) {
+          setAvatarPreview(profile.avatar_url ?? null)
+          setAvatarFile(null)
+          setSaveMessage('Avatar preview updated locally only. Remote upload is not configured for this environment.')
+          setSaveState('saved')
+          return
+        }
       }
 
       const loginUpdatePayload = {
@@ -2057,11 +2049,22 @@ function Profile({ userProfile, onProfileSave }: { userProfile?: { name?: string
         updated_at: new Date().toISOString(),
       }
 
-      if (candidateStudentCode) {
+      const exactLoginRows = await supabase.from('student_login_accounts').select('*').limit(200)
+      const exactLoginRow = !exactLoginRows.error ? (exactLoginRows.data ?? []).find((row: any) => {
+        const rowStudentCode = String(row?.student_code ?? '').trim().toUpperCase()
+        const rowStudentId = String(row?.student_id ?? '').trim().toUpperCase()
+        const rowEmail = String(row?.email ?? '').trim().toLowerCase()
+        const targetCode = String(candidateStudentCode ?? '').trim().toUpperCase()
+        const targetId = String(candidateStudentId ?? '').trim().toUpperCase()
+        const targetEmail = String(profile.email ?? '').trim().toLowerCase()
+        return rowStudentCode === targetCode || rowStudentId === targetId || rowEmail === targetEmail
+      }) ?? null : null
+
+      if (exactLoginRow) {
         const { error: loginError } = await supabase
           .from('student_login_accounts')
           .update(loginUpdatePayload)
-          .eq('student_code', candidateStudentCode)
+          .eq('id', exactLoginRow.id)
 
         if (loginError) {
           console.warn('Unable to update student_login_accounts', loginError)
@@ -2076,25 +2079,25 @@ function Profile({ userProfile, onProfileSave }: { userProfile?: { name?: string
         avatar_url: avatarUrl,
       }
 
-      if (candidateStudentCode) {
+      const exactStudentRows = await supabase.from('students').select('*').limit(200)
+      const exactStudentRow = !exactStudentRows.error ? (exactStudentRows.data ?? []).find((row: any) => {
+        const rowStudentCode = String(row?.student_code ?? '').trim().toUpperCase()
+        const rowStudentId = String(row?.id ?? '').trim().toUpperCase()
+        const rowEmail = String(row?.email ?? '').trim().toLowerCase()
+        const targetCode = String(candidateStudentCode ?? '').trim().toUpperCase()
+        const targetId = String(candidateStudentId ?? '').trim().toUpperCase()
+        const targetEmail = String(profile.email ?? '').trim().toLowerCase()
+        return rowStudentCode === targetCode || rowStudentId === targetId || rowEmail === targetEmail
+      }) ?? null : null
+
+      if (exactStudentRow) {
         const { error: studentUpdateError } = await supabase
           .from('students')
           .update(studentUpdatePayload)
-          .eq('student_code', candidateStudentCode)
+          .eq('id', exactStudentRow.id)
 
         if (studentUpdateError) {
           console.warn('Unable to update students table', studentUpdateError)
-        }
-      }
-
-      if (candidateStudentId) {
-        const { error: studentIdUpdateError } = await supabase
-          .from('students')
-          .update(studentUpdatePayload)
-          .eq('id', candidateStudentId)
-
-        if (studentIdUpdateError) {
-          console.warn('Unable to update students by id', studentIdUpdateError)
         }
       }
 

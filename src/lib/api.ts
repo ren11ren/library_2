@@ -12,26 +12,33 @@ function buildStudentIdentifierSet(value: string): string[] {
     const variants = new Set<string>()
     if (!trimmed) return []
 
-    const direct = [trimmed, trimmed.toUpperCase(), trimmed.toLowerCase()]
-    direct.forEach((variant) => variants.add(variant))
+    variants.add(trimmed)
+    variants.add(trimmed.toUpperCase())
+    variants.add(trimmed.toLowerCase())
 
     const normalizedCode = normalizeStudentCode(trimmed)
     variants.add(normalizedCode)
     variants.add(normalizedCode.replace(/^STU-/i, ''))
 
+    const withoutAt = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed
+    if (withoutAt && withoutAt !== trimmed) {
+        variants.add(withoutAt)
+        variants.add(withoutAt.toUpperCase())
+        variants.add(withoutAt.toLowerCase())
+    }
+
     return [...variants].filter(Boolean)
 }
 
 function rowMatchesStudentIdentifier(row: any, identifiers: string[]): boolean {
-    const allValues = [
+    const exactValues = [
         row?.id,
         row?.student_code,
         row?.student_id,
         row?.email,
-        row?.name,
     ].filter((value) => typeof value === 'string' && value.trim())
 
-    return allValues.some((value) =>
+    return exactValues.some((value) =>
         identifiers.some((identifier) => String(value).trim().toUpperCase() === String(identifier).trim().toUpperCase())
     )
 }
@@ -94,7 +101,9 @@ function findBookMatch(allBooks: any[], target: string): any {
     if (!trimmedTarget) return null
 
     const targetNormalized = normalizeBookReference(trimmedTarget)
-    return (allBooks ?? []).find((book: any) => {
+    const targetLower = trimmedTarget.toLowerCase()
+
+    const exactMatches = (allBooks ?? []).filter((book: any) => {
         const candidates = [
             book?.id,
             book?.book_code,
@@ -107,12 +116,32 @@ function findBookMatch(allBooks: any[], target: string): any {
         return candidates.some((candidate) => {
             const candidateText = String(candidate).trim()
             const normalizedCandidate = normalizeBookReference(candidateText)
+            const candidateLower = candidateText.toLowerCase()
+            const compactCandidate = candidateText.replace(/[-\s]/g, '').toLowerCase()
+            const compactTarget = trimmedTarget.replace(/[-\s]/g, '').toLowerCase()
+
             return normalizedCandidate === targetNormalized
-                || candidateText.toLowerCase() === trimmedTarget.toLowerCase()
-                || candidateText.replace(/-/g, '').toLowerCase() === trimmedTarget.replace(/-/g, '').toLowerCase()
-                || (typeof book?.title === 'string' && normalizeBookReference(book.title).includes(targetNormalized))
+                || candidateLower === targetLower
+                || compactCandidate === compactTarget
+                || (typeof book?.isbn === 'string' && normalizeBookReference(book.isbn) === targetNormalized)
+                || (typeof book?.title === 'string' && normalizeBookReference(book.title) === targetNormalized)
         })
-    }) ?? null
+    })
+
+    if (exactMatches.length > 0) return exactMatches[0]
+
+    const nearMatches = (allBooks ?? []).filter((book: any) => {
+        const title = typeof book?.title === 'string' ? book.title.toLowerCase() : ''
+        const isbn = typeof book?.isbn === 'string' ? book.isbn.toLowerCase() : ''
+        const code = typeof book?.book_code === 'string' ? book.book_code.toLowerCase() : ''
+
+        return title.includes(targetLower)
+            || isbn.includes(targetLower)
+            || code.includes(targetLower)
+            || (targetNormalized.length > 4 && (normalizeBookReference(title).includes(targetNormalized) || normalizeBookReference(isbn).includes(targetNormalized)))
+    })
+
+    return nearMatches[0] ?? null
 }
 
 async function hashPassword(value: string): Promise<string> {
@@ -246,7 +275,7 @@ export async function processReturn(recordIdOrCard: string, finalReturnDate?: st
 
     if (!matchedStudent) throw new Error('Student not found. Please choose a valid student record.')
 
-    const { data: allBooks, error: bookErr } = await supabase.from('books').select('*').limit(10)
+    const { data: allBooks, error: bookErr } = await supabase.from('books').select('*')
     if (bookErr) throw bookErr
 
     const matchedBook = findBookMatch(allBooks ?? [], bookQuery)
@@ -345,63 +374,47 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
     const trimmedStudentId = String(studentId ?? '').trim()
     if (!trimmedStudentId) throw new Error('Student not found. Please log in with a valid student account.')
 
-    try {
-        const identifiers = buildStudentIdentifierSet(trimmedStudentId)
-        const { data: loginRows, error: loginErr } = await supabase
-            .from('student_login_accounts')
-            .select('*')
-            .limit(50)
+    const identifiers = buildStudentIdentifierSet(trimmedStudentId)
+    const { data: loginRows, error: loginErr } = await supabase
+        .from('student_login_accounts')
+        .select('*')
+        .limit(50)
 
-        if (loginErr) throw loginErr
+    if (loginErr) throw loginErr
 
-        const loginRow = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, identifiers)) ?? null
-        if (!loginRow) throw new Error('Student not found. Please register this student first.')
+    const loginRow = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, identifiers)) ?? null
+    if (!loginRow) throw new Error('Student not found. Please register this student first.')
 
-        const { data: allBooks, error: listErr } = await supabase.from('books').select('*').limit(10)
-        if (listErr) throw listErr
+    const { data: allBooks, error: listErr } = await supabase.from('books').select('*')
+    if (listErr) throw listErr
 
-        const normalizedBookId = String(bookId ?? '').trim()
-        const bookRow = findBookMatch(allBooks ?? [], normalizedBookId)
+    const normalizedBookId = String(bookId ?? '').trim()
+    const bookRow = findBookMatch(allBooks ?? [], normalizedBookId)
 
-        if (!bookRow) throw new Error(`Book not found: ${bookId}`)
+    if (!bookRow) throw new Error(`Book not found: ${bookId}`)
 
-        const borrowDate = new Date().toISOString().slice(0, 10)
-        const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-        const payload = {
-            id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `loan-${Date.now()}`,
-            txn_code: `TXN-${Date.now()}`,
-            student_id: String(loginRow.id),
-            book_id: bookRow.id,
-            borrow_date: borrowDate,
-            due_date: dueDate,
-            return_date: null,
-            status: 'active',
-            notified: false,
-            condition: 'Good',
-            created_at: new Date().toISOString(),
-        }
-
-        const { data: inserted, error: insertErr } = await supabase.from('borrowing_records').insert([payload]).select().maybeSingle()
-        if (insertErr) throw insertErr
-
-        const currentAvailable = Number(bookRow.available_copies ?? bookRow.available ?? 0)
-        await supabase.from('books').update({ available_copies: Math.max(currentAvailable - 1, 0), available: Math.max(currentAvailable - 1, 0) }).eq('id', bookRow.id)
-        return inserted
-    } catch (err) {
-        console.debug('[api] student_login_accounts borrow failed; falling back to mock borrow', err)
-        const { borrowBook: mockBorrow, upsertStudent } = await import('./mockApi')
-        const studentCode = normalizeStudentCode(trimmedStudentId)
-        await upsertStudent({
-            id: crypto?.randomUUID ? crypto.randomUUID() : `mock-student-${Date.now()}`,
-            student_code: studentCode,
-            name: 'Current Student',
-            email: buildStudentEmailFromCode(studentCode),
-            course: 'Unassigned',
-            year_level: '1st Year',
-            status: 'active',
-        })
-        return await mockBorrow(studentCode, bookId)
+    const borrowDate = new Date().toISOString().slice(0, 10)
+    const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const payload = {
+        id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `loan-${Date.now()}`,
+        txn_code: `TXN-${Date.now()}`,
+        student_id: String(loginRow.id),
+        book_id: bookRow.id,
+        borrow_date: borrowDate,
+        due_date: dueDate,
+        return_date: null,
+        status: 'active',
+        notified: false,
+        condition: 'Good',
+        created_at: new Date().toISOString(),
     }
+
+    const { data: inserted, error: insertErr } = await supabase.from('borrowing_records').insert([payload]).select().maybeSingle()
+    if (insertErr) throw insertErr
+
+    const currentAvailable = Number(bookRow.available_copies ?? bookRow.available ?? 0)
+    await supabase.from('books').update({ available_copies: Math.max(currentAvailable - 1, 0), available: Math.max(currentAvailable - 1, 0) }).eq('id', bookRow.id)
+    return inserted
 }
 
 export async function returnBook(recordId: string) {
@@ -424,7 +437,16 @@ export async function login(emailOrId: string, password: string, role: UserRole)
         const row = (loginRows ?? []).find((candidate: any) => rowMatchesStudentIdentifier(candidate, targetIdentifiers))
 
         if (!row) {
-            throw new Error('Student not found. Please log in with your exact student ID, email, or registered name.')
+            const fallbackByName = (loginRows ?? []).find((candidate: any) => {
+                const fullName = String(candidate?.full_name ?? candidate?.name ?? '').trim().toLowerCase()
+                return fullName && fullName === String(identifier).trim().toLowerCase()
+            })
+
+            if (!fallbackByName) {
+                throw new Error('Student not found. Please log in with your exact student ID or email.')
+            }
+
+            throw new Error('Student account could not be matched securely. Please use your student ID or email instead of a name.')
         }
 
         const accountStatus = String(row.status ?? 'active').toLowerCase()
