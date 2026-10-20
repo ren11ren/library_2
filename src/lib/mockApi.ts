@@ -21,7 +21,7 @@ const defaultLibraryState = {
     app_users: [] as any[],
     library_cards: [] as any[],
     borrowing_records: [] as any[],
-    settings: { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'admin@library.local' }
+    settings: { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 5, fine_per_day: 5.0, admin_email: 'admin@library.local' }
 }
 
 function ensureSeedUsers(data: any) {
@@ -232,7 +232,7 @@ export async function fetchStudents() {
 }
 
 export async function fetchLibraryCards() { return CARDS }
-export async function fetchSettings() { return { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 3, fine_per_day: 5.0, admin_email: 'admin@library.local' } as Settings }
+export async function fetchSettings() { return { id: 1, library_name: 'Campus Library', borrow_period_days: 14, max_books_per_student: 5, fine_per_day: 5.0, admin_email: 'admin@library.local' } as Settings }
 
 function withDashboardMetadata(record: any) {
     const book = (BOOKS as any[]).find((candidate: any) => {
@@ -574,7 +574,7 @@ export async function borrowBook(studentId: string, bookId: string, borrowPeriod
     if (!book) throw new Error(`Book not found: ${bookId}`)
     if ((book.available ?? 0) <= 0) throw new Error('Book is not available')
 
-    const maxBooks = SETTINGS?.max_books_per_student ?? 3
+    const maxBooks = SETTINGS?.max_books_per_student ?? 5
     const active = BORROWING.filter((r) => r.student_id === student.id && !r.return_date).length
     if (active >= maxBooks) throw new Error(`Maximum of ${maxBooks} books can be borrowed at once`)
 

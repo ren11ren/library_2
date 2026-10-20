@@ -69,7 +69,19 @@ async function ensureStudentRecordForLoginRow(loginRow: any): Promise<any> {
         .maybeSingle()
 
     if (lookupError) throw lookupError
-    if (existingStudent) return existingStudent
+    if (existingStudent) {
+        if (String(loginRow?.id ?? '').trim() && String(existingStudent.id ?? '').trim() !== String(loginRow.id).trim()) {
+            const { error: syncError } = await supabase
+                .from('student_login_accounts')
+                .update({ id: existingStudent.id, updated_at: new Date().toISOString() })
+                .eq('id', loginRow.id)
+
+            if (syncError) {
+                console.warn('[student-sync] login account ID could not be aligned with student row', syncError)
+            }
+        }
+        return existingStudent
+    }
 
     const generatedId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `stu-${Date.now()}`
     const { data: createdStudent, error: createError } = await supabase
@@ -89,6 +101,18 @@ async function ensureStudentRecordForLoginRow(loginRow: any): Promise<any> {
         .maybeSingle()
 
     if (createError) throw createError
+
+    if (createdStudent && String(loginRow?.id ?? '').trim() && String(createdStudent.id ?? '').trim() !== String(loginRow.id).trim()) {
+        const { error: syncError } = await supabase
+            .from('student_login_accounts')
+            .update({ id: createdStudent.id, updated_at: new Date().toISOString() })
+            .eq('id', loginRow.id)
+
+        if (syncError) {
+            console.warn('[student-sync] login account ID could not be synchronized', syncError)
+        }
+    }
+
     return createdStudent
 }
 
@@ -325,7 +349,25 @@ export async function fetchStudentBorrowingRecords(studentId?: string) {
 
         if (error) throw error
 
+        const { data: studentRows, error: studentLookupError } = await supabase
+            .from('students')
+            .select('*')
+            .limit(200)
+
+        if (studentLookupError) throw studentLookupError
+
+        const studentRow = (studentRows ?? []).find((row: any) => {
+            const candidateCode = String(row?.student_code ?? '').trim().toUpperCase()
+            const candidateId = String(row?.id ?? '').trim().toUpperCase()
+            const loginCode = String(matchedLogin?.student_code ?? matchedLogin?.student_id ?? '').trim().toUpperCase()
+            const loginId = String(matchedLogin?.id ?? '').trim().toUpperCase()
+            const loginEmail = String(matchedLogin?.email ?? '').trim().toLowerCase()
+            return candidateCode === loginCode || candidateId === loginId || String(row?.email ?? '').trim().toLowerCase() === loginEmail
+        }) ?? null
+
+        const targetStudentId = String(studentRow?.id ?? matchedLogin.id ?? '').trim()
         const studentMatchValues = new Set([
+            String(targetStudentId ?? '').trim(),
             String(matchedLogin.id ?? '').trim(),
             String(matchedLogin.student_id ?? '').trim(),
             String(matchedLogin.student_code ?? '').trim(),
@@ -334,7 +376,7 @@ export async function fetchStudentBorrowingRecords(studentId?: string) {
 
         const matchingRecords = (allRecords ?? []).filter((record: any) => {
             const studentId = String(record?.student_id ?? '').trim()
-            return studentMatchValues.has(studentId) || studentId === String(matchedLogin.id ?? '').trim()
+            return studentMatchValues.has(studentId) || studentId === String(targetStudentId ?? '').trim() || studentId === String(matchedLogin.id ?? '').trim()
         }).filter((record: any) => !record?.return_date || record.return_date === null || record.return_date === undefined || record.return_date === '')
 
         if (!matchingRecords.length) return []
@@ -385,6 +427,23 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
     const loginRow = (loginRows ?? []).find((row: any) => rowMatchesStudentIdentifier(row, identifiers)) ?? null
     if (!loginRow) throw new Error('Student not found. Please register this student first.')
 
+    const studentRow = await ensureStudentRecordForLoginRow(loginRow)
+    const studentUuid = String(studentRow?.id ?? loginRow?.id ?? '').trim()
+    if (!studentUuid) throw new Error('Unable to resolve the student record for this borrow.')
+
+    const { data: currentLoans, error: loanCountError } = await supabase
+        .from('borrowing_records')
+        .select('id')
+        .eq('student_id', studentUuid)
+        .is('return_date', null)
+
+    if (loanCountError) throw loanCountError
+
+    const limit = 5
+    if ((currentLoans ?? []).length >= limit) {
+        throw new Error(`Maximum of ${limit} books can be borrowed at once.`)
+    }
+
     const { data: allBooks, error: listErr } = await supabase.from('books').select('*')
     if (listErr) throw listErr
 
@@ -398,7 +457,7 @@ export async function borrowBook(studentId: string | undefined, bookId: string) 
     const payload = {
         id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `loan-${Date.now()}`,
         txn_code: `TXN-${Date.now()}`,
-        student_id: String(loginRow.id),
+        student_id: studentUuid,
         book_id: bookRow.id,
         borrow_date: borrowDate,
         due_date: dueDate,
@@ -460,41 +519,40 @@ export async function login(emailOrId: string, password: string, role: UserRole)
         }
 
         const studentCode = row.student_code ?? row.student_id ?? inputValue
+        let studentRow: any = null
+        try {
+            const { data } = await supabase
+                .from('students')
+                .select('*')
+                .or(`student_code.eq.${studentCode},id.eq.${String(row.student_id ?? '').trim() || studentCode},email.eq.${buildStudentEmailFromCode(studentCode)}`)
+                .limit(1)
+            studentRow = Array.isArray(data) && data.length > 0 ? data[0] : null
+        } catch (e) {
+            studentRow = null
+        }
+
+        const actualStudentId = String(studentRow?.id ?? row.student_id ?? row.id ?? studentCode).trim()
         const student = {
-            id: row.student_id ?? row.student_code ?? studentCode,
+            id: actualStudentId,
             student_code: studentCode,
-            name: row.full_name ?? 'Student',
-            email: buildStudentEmailFromCode(studentCode),
-            course: row.course ?? 'Unassigned',
-            year_level: row.year_level ?? '1st Year',
-            status: row.status ?? 'active',
-            avatar_url: row.avatar_url ?? null,
+            name: studentRow?.name ?? row.full_name ?? 'Student',
+            email: studentRow?.email ?? row.email ?? buildStudentEmailFromCode(studentCode),
+            course: studentRow?.course ?? row.course ?? 'Unassigned',
+            year_level: studentRow?.year_level ?? row.year_level ?? '1st Year',
+            status: studentRow?.status ?? row.status ?? 'active',
+            avatar_url: studentRow?.avatar_url ?? row.avatar_url ?? null,
         }
 
         const loginUser = {
             id: row.id,
-            email: buildStudentEmailFromCode(studentCode),
-            student_id: row.student_id,
+            email: student.email,
+            student_id: actualStudentId,
             student_code: studentCode,
-            full_name: row.full_name,
-            course: row.course,
-            year_level: row.year_level,
-            status: row.status,
-            avatar_url: row.avatar_url ?? null,
-        }
-
-        // Try to fetch additional profile fields (avatar_url, course, etc.) from the students table
-        try {
-            const { data: studentRow } = await supabase.from('students').select('avatar_url,course,year_level').or(`student_code.eq.${studentCode},id.eq.${studentCode}`).maybeSingle()
-            if (studentRow) {
-                student.avatar_url = studentRow.avatar_url ?? null
-                student.course = studentRow.course ?? student.course
-                student.year_level = studentRow.year_level ?? student.year_level
-                // also attach to loginUser for convenience
-                loginUser.avatar_url = studentRow.avatar_url ?? null
-            }
-        } catch (e) {
-            // ignore
+            full_name: student.name,
+            course: student.course,
+            year_level: student.year_level,
+            status: student.status,
+            avatar_url: student.avatar_url ?? null,
         }
 
         return { user: loginUser as any, student, card: null, loginAccount: row }

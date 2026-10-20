@@ -549,6 +549,7 @@ function LoginPage({ onLogin }: { onLogin: (role: Role, email: string, password:
                     const upsertErrors: string[] = []
 
                     const loginAccountPayload = {
+                      id,
                       student_id: studentCode,
                       student_code: studentCode,
                       full_name: name,
@@ -814,10 +815,25 @@ async function fetchStudentBorrowingLog(studentKey?: string): Promise<Array<{ bo
 
     if (!loginRow) return []
 
+    const { data: studentRows, error: studentError } = await supabase.from('students').select('*').limit(200)
+    if (studentError) throw studentError
+
+    const studentRow = (studentRows ?? []).find((student: any) => {
+      const safeStudentCode = String(student?.student_code ?? '').trim().toUpperCase()
+      const safeStudentId = String(student?.id ?? '').trim().toUpperCase()
+      const safeLoginCode = String(loginRow?.student_code ?? loginRow?.student_id ?? '').trim().toUpperCase()
+      const safeLoginId = String(loginRow?.id ?? '').trim().toUpperCase()
+      const safeEmail = String(loginRow?.email ?? '').trim().toLowerCase()
+      return safeStudentCode === safeLoginCode || safeStudentId === safeLoginId || String(student?.email ?? '').trim().toLowerCase() === safeEmail
+    }) ?? null
+
+    const targetStudentId = String(studentRow?.id ?? loginRow?.id ?? '').trim()
+    if (!targetStudentId) return []
+
     const { data: recordRows, error: recordError } = await supabase
       .from('borrowing_records')
       .select('*')
-      .eq('student_id', loginRow.id)
+      .eq('student_id', targetStudentId)
       .order('borrow_date', { ascending: false })
 
     if (recordError) throw recordError
@@ -1020,7 +1036,9 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
   const overdueCount = rows.filter((row) => row.status === 'overdue').length
   const dueSoonCount = rows.filter((row) => row.status === 'due-soon').length
   const dueReminderBooks = rows.filter((row) => row.status === 'due-soon' || row.status === 'overdue')
+  const borrowLimit = 5
   const currentlyBorrowed = rows.length
+  const borrowProgress = Math.min((currentlyBorrowed / borrowLimit) * 100, 100)
   const nextDue = [...rows].filter((row) => row.dueDate).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0] ?? null
 
   useEffect(() => {
@@ -1153,6 +1171,17 @@ function StudentDashboard({ onNavigate, userProfile }: { onNavigate: (v: Student
         </div>
 
         <aside className="space-y-4">
+          <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Borrowing Limit</div>
+            <div className="mt-3 flex items-center justify-between text-sm font-medium text-gray-700">
+              <span>{currentlyBorrowed}/{borrowLimit}</span>
+              <span>{Math.round(borrowProgress)}%</span>
+            </div>
+            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-green-100">
+              <div className="h-full rounded-full bg-green-600 transition-all duration-300" style={{ width: `${borrowProgress}%` }} />
+            </div>
+          </div>
+
           <div className="bg-white rounded-xl border border-green-100 p-4 shadow-sm">
             <div className="text-sm text-gray-500">Next Due Dates</div>
             <div className="mt-2 text-sm text-gray-500">
@@ -4337,7 +4366,7 @@ function AdminSettings() {
   const [form, setForm] = useState({
     library_name: 'Campus Library',
     borrow_period_days: '14',
-    max_books_per_student: '3',
+    max_books_per_student: '5',
     fine_per_day: '5.00',
     admin_email: 'admin@library.local',
   })
@@ -4354,7 +4383,7 @@ function AdminSettings() {
         setForm({
           library_name: settings.library_name ?? 'Campus Library',
           borrow_period_days: String(settings.borrow_period_days ?? 14),
-          max_books_per_student: String(settings.max_books_per_student ?? 3),
+          max_books_per_student: String(settings.max_books_per_student ?? 5),
           fine_per_day: String(settings.fine_per_day ?? 5),
           admin_email: settings.admin_email ?? 'admin@library.local',
         })
@@ -4369,7 +4398,7 @@ function AdminSettings() {
       await saveSettings({
         library_name: form.library_name,
         borrow_period_days: Number(form.borrow_period_days) || 14,
-        max_books_per_student: Number(form.max_books_per_student) || 3,
+        max_books_per_student: Number(form.max_books_per_student) || 5,
         fine_per_day: Number(form.fine_per_day) || 5,
         admin_email: form.admin_email,
       })
@@ -5144,7 +5173,7 @@ export default function App() {
       const hydrated: AuthState = {
         ...nextAuth,
         studentCode: String(studentRow?.student_code ?? loginRow?.student_code ?? nextAuth.studentCode ?? nextAuth.studentId ?? '').trim() || nextAuth.studentCode,
-        studentId: String(studentRow?.student_code ?? loginRow?.student_id ?? nextAuth.studentId ?? nextAuth.studentCode ?? '').trim() || nextAuth.studentId,
+        studentId: String(studentRow?.id ?? loginRow?.id ?? nextAuth.studentId ?? nextAuth.studentCode ?? '').trim() || nextAuth.studentId,
         name: String(studentRow?.name ?? loginRow?.full_name ?? nextAuth.name ?? 'Student').trim() || 'Student',
         email: String(studentRow?.email ?? nextAuth.email ?? '').trim() || nextAuth.email,
         course: String(studentRow?.course ?? loginRow?.course ?? nextAuth.course ?? 'Unassigned').trim() || 'Unassigned',
@@ -5239,8 +5268,8 @@ export default function App() {
     const res = await login(email, password, role)
     const student = res.student ?? null
     const card = res.card ?? null
-    const effectiveStudentCode = student?.student_code ?? res.user?.student_id ?? email
-    const effectiveStudentId = res.user?.student_id ?? effectiveStudentCode
+    const effectiveStudentCode = student?.student_code ?? res.user?.student_code ?? res.user?.student_id ?? email
+    const effectiveStudentId = student?.id ?? res.user?.student_id ?? effectiveStudentCode
     const derivedCard = card?.card_no ?? (effectiveStudentCode ? `CARD-${String(effectiveStudentCode).replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12) || 'STUDENT'}` : 'N/A')
 
     setAuth({
